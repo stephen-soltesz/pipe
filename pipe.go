@@ -39,6 +39,7 @@ import (
 	"fmt"
 	"io"
 	"io/ioutil"
+	"log"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -102,6 +103,9 @@ type State struct {
 	// If set to zero, the pipe will not be aborted.
 	Timeout time.Duration
 
+	// Echo controls whether Tasks echo their components during execution.
+	Echo bool
+
 	killedMutex sync.Mutex
 	killedNoted bool
 	killed      chan bool
@@ -126,6 +130,7 @@ func NewState(stdout, stderr io.Writer) *State {
 		Stderr: stderr,
 		Env:    os.Environ(),
 		killed: make(chan bool, 1),
+		Echo:   true,
 	}
 }
 
@@ -166,10 +171,13 @@ func (pt *pendingTask) done(err error) {
 }
 
 var (
+	// ErrTimeout represents timeout errors.
 	ErrTimeout = errors.New("timeout")
-	ErrKilled  = errors.New("explicitly killed")
+	// ErrKilled represents a killed task.
+	ErrKilled = errors.New("explicitly killed")
 )
 
+// Errors records multiple errors when running multiple tasks.
 type Errors []error
 
 func (e Errors) Error() string {
@@ -188,7 +196,6 @@ func (s *State) AddTask(t Task) error {
 	s.pendingTasks = append(s.pendingTasks, pt)
 	return nil
 }
-
 
 // RunTasks runs all pending tasks registered via AddTask.
 // This is called by the pipe running functions and generally
@@ -309,6 +316,11 @@ func (s *State) SetEnvVar(name, value string) {
 		}
 	}
 	s.Env = append(s.Env, prefix+value)
+}
+
+// SetEcho changes the command echo setting.
+func (s *State) SetEcho(state bool) {
+	s.Echo = state
 }
 
 // Path returns the provided path relative to the state's current directory.
@@ -505,6 +517,10 @@ func (f *execTask) Run(s *State) error {
 		f.m.Unlock()
 		return nil
 	}
+	if s.Echo {
+		echoCmd := strings.Join(append([]string{f.name}, f.args...), " ")
+		log.Printf("    %s", echoCmd)
+	}
 	cmd := exec.Command(f.name, f.args...)
 	cmd.Dir = s.Dir
 	cmd.Env = s.Env
@@ -676,6 +692,7 @@ func (rc *refCloser) Close() error {
 // For example, the equivalent of "cat article.ps | lpr; mv article.ps{,.done}" is:
 //
 //    p := pipe.Script(
+//        "ScriptName",
 //        pipe.Line(
 //            pipe.ReadFile("article.ps"),
 //            pipe.Exec("lpr"),
@@ -684,7 +701,7 @@ func (rc *refCloser) Close() error {
 //    )
 //    output, err := pipe.CombinedOutput(p)
 //
-func Script(p ...Pipe) Pipe {
+func Script(name string, p ...Pipe) Pipe {
 	return func(s *State) error {
 		saved := *s
 		s.Env = append([]string(nil), s.Env...)
@@ -692,6 +709,14 @@ func Script(p ...Pipe) Pipe {
 			s.Dir = saved.Dir
 			s.Env = saved.Env
 		}()
+		// Make the first action be to print the script name, if Echo is enabled.
+		echo := TaskFunc(func(s *State) error {
+			if s.Echo {
+				log.Printf("# Script: %s", name)
+			}
+			return nil
+		})
+		p = append([]Pipe{echo}, p...)
 
 		startLen := len(s.pendingTasks)
 		for _, p := range p {

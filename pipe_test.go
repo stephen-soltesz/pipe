@@ -11,7 +11,7 @@ import (
 	"time"
 
 	. "gopkg.in/check.v1"
-	"gopkg.in/pipe.v2"
+	"gopkg.in/m-lab/pipe.v3"
 )
 
 func Test(t *testing.T) {
@@ -174,12 +174,13 @@ func (S) TestLineTermination(c *C) {
 		pipe.Exec("true"),
 	)
 	output, err := pipe.Output(p)
-	c.Assert(err, ErrorMatches, `command "true": write \|1: broken pipe`)
+	c.Assert(err, ErrorMatches, `io: read/write on closed pipe`)
 	c.Assert(string(output), Equals, "")
 }
 
 func (S) TestScriptOutput(c *C) {
 	p := pipe.Script(
+		"TestScriptOutput",
 		pipe.System("echo out1; echo err1 1>&2; echo out2; echo err2 1>&2"),
 		pipe.System("echo out3; echo err3 1>&2; echo out4; echo err4 1>&2"),
 	)
@@ -191,6 +192,7 @@ func (S) TestScriptOutput(c *C) {
 
 func (S) TestScriptCombinedOutput(c *C) {
 	p := pipe.Script(
+		"TestScriptCombinedOutput",
 		pipe.System("echo out1; echo err1 1>&2; echo out2; echo err2 1>&2"),
 		pipe.System("echo out3; echo err3 1>&2; echo out4; echo err4 1>&2"),
 	)
@@ -202,6 +204,7 @@ func (S) TestScriptCombinedOutput(c *C) {
 func (S) TestErrorHandling(c *C) {
 	sync := make(chan bool)
 	p := pipe.Script(
+		"TestErrorHandling",
 		pipe.Line(
 			pipe.TaskFunc(func(*pipe.State) error {
 				sync <- true
@@ -226,6 +229,7 @@ func (S) TestSetEnvVar(c *C) {
 	os.Setenv("PIPE_OLD_VAR", "old")
 	defer os.Setenv("PIPE_OLD_VAR", "")
 	p := pipe.Script(
+		"TestSetEnvVar",
 		pipe.SetEnvVar("PIPE_NEW_VAR", "new"),
 		pipe.System("echo $PIPE_OLD_VAR $PIPE_NEW_VAR"),
 		pipe.SetEnvVar("PIPE_NEW_VAR", "after"),
@@ -251,8 +255,10 @@ func (S) TestSetEnvVar(c *C) {
 
 func (S) TestScriptIsolatesEnv(c *C) {
 	p := pipe.Script(
+		"TestScriptIsolatesEnv",
 		pipe.SetEnvVar("PIPE_VAR", "outer"),
 		pipe.Script(
+			"TestScriptIsolatesEnv",
 			pipe.SetEnvVar("PIPE_VAR", "inner"),
 		),
 		pipe.System("echo $PIPE_VAR"),
@@ -266,8 +272,10 @@ func (S) TestScriptIsolatesDir(c *C) {
 	dir1 := c.MkDir()
 	dir2 := c.MkDir()
 	p := pipe.Script(
+		"TestScriptIsolatesDir",
 		pipe.ChDir(dir1),
 		pipe.Script(
+			"TestScriptIsolatesDir",
 			pipe.ChDir(dir2),
 		),
 		pipe.System("echo $PWD"),
@@ -325,6 +333,7 @@ func (S) TestScriptNesting(c *C) {
 	p := pipe.Line(
 		pipe.Print("hello"),
 		pipe.Script(
+			"TestScriptNesting",
 			pipe.Print("world"),
 			pipe.Exec("sed", "s/l/k/g"),
 		),
@@ -337,6 +346,7 @@ func (S) TestScriptNesting(c *C) {
 
 func (S) TestScriptPreservesStreams(c *C) {
 	p := pipe.Script(
+		"TestScriptPreservesStreams",
 		pipe.Line(
 			pipe.Print("hello\n"),
 			pipe.Discard(),
@@ -356,6 +366,7 @@ func (S) TestChDir(c *C) {
 	subdir := filepath.Join(dir, "subdir")
 	err = os.Mkdir(subdir, 0755)
 	p := pipe.Script(
+		"TestChDir",
 		pipe.ChDir(dir),
 		pipe.ChDir("subdir"),
 		pipe.System("echo $PWD"),
@@ -374,6 +385,7 @@ func (S) TestMkDir(c *C) {
 	subdir := filepath.Join(dir, "subdir")
 	subsubdir := filepath.Join(subdir, "subsubdir")
 	p := pipe.Script(
+		"TestMkDir",
 		pipe.MkDir(subdir, 0755), // Absolute
 		pipe.ChDir(subdir),
 		pipe.MkDir("subsubdir", 0700), // Relative
@@ -395,6 +407,7 @@ func (S) TestMkDirAll(c *C) {
 	subsubdir := filepath.Join(subdir, "subsubdir")
 	subsubsubdir := filepath.Join(subsubdir, "subsubsubdir")
 	p := pipe.Script(
+		"TestMkDirAll",
 		pipe.MkDirAll(subsubdir, 0755), // Absolute
 		pipe.MkDirAll(subsubdir, 0755),
 		pipe.ChDir(subsubdir),
@@ -550,6 +563,7 @@ func (S) TestWriteFileRelative(c *C) {
 	dir := c.MkDir()
 	path := filepath.Join(dir, "file")
 	p := pipe.Script(
+		"TestWriteFileRelative",
 		pipe.ChDir(dir),
 		pipe.Line(
 			pipe.Print("hello"),
@@ -580,6 +594,7 @@ func (S) TestWriteFileMode(c *C) {
 func (S) TestAppendFileAbsolute(c *C) {
 	path := filepath.Join(c.MkDir(), "file")
 	p := pipe.Script(
+		"TestAppendFileAbsolute",
 		pipe.Line(
 			pipe.Print("hello "),
 			pipe.AppendFile(path, 0600),
@@ -602,6 +617,7 @@ func (S) TestAppendFileRelative(c *C) {
 	dir := c.MkDir()
 	path := filepath.Join(dir, "file")
 	p := pipe.Script(
+		"TestAppendFileRelative",
 		pipe.ChDir(dir),
 		pipe.Line(
 			pipe.Print("hello "),
@@ -687,6 +703,7 @@ func (S) TestTeeWriteFileMode(c *C) {
 func (S) TestTeeAppendFileAbsolute(c *C) {
 	path := filepath.Join(c.MkDir(), "file")
 	p := pipe.Script(
+		"TestTeeAppendFileAbsolute",
 		pipe.Line(
 			pipe.Print("hello "),
 			pipe.TeeAppendFile(path, 0600),
@@ -713,6 +730,7 @@ func (S) TestTeeAppendFileRelative(c *C) {
 	dir := c.MkDir()
 	path := filepath.Join(dir, "file")
 	p := pipe.Script(
+		"TestTeeAppendFileRelative",
 		pipe.ChDir(dir),
 		pipe.Line(
 			pipe.Print("hello "),
@@ -804,6 +822,7 @@ func (S) TestReplaceNoNewLine(c *C) {
 
 func (S) TestKillAbortedExecTask(c *C) {
 	p := pipe.Script(
+		"TestKillAbortedExecTask",
 		pipe.TaskFunc(func(*pipe.State) error { return fmt.Errorf("boom") }),
 		pipe.Exec("will-not-run"),
 	)
@@ -816,6 +835,7 @@ func (S) TestRenameFileAbsolute(c *C) {
 	from := filepath.Join(dir, "from")
 	to := filepath.Join(dir, "to")
 	p := pipe.Script(
+		"TestRenameFileAbsolute",
 		pipe.WriteFile(from, 0644),
 		pipe.RenameFile(from, to),
 	)
@@ -833,6 +853,7 @@ func (S) TestRenameFileRelative(c *C) {
 	from := filepath.Join(dir, "from")
 	to := filepath.Join(dir, "to")
 	p := pipe.Script(
+		"TestRenameFileRelative",
 		pipe.ChDir(dir),
 		pipe.WriteFile("from", 0644),
 		pipe.RenameFile("from", "to"),
