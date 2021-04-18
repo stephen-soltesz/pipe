@@ -28,7 +28,7 @@ command / operation / task / job / jx
 hybrid shell go program script
 
 
-shx.Task
+shx.Job
 
 shx.Func
 shx.Sh
@@ -36,6 +36,7 @@ shx.Exec
 shx.Pipe
 shx.Script
 */
+
 /*
 s := NewSession()
 s.SetDir("foo")
@@ -85,8 +86,8 @@ func (s *Session) SetEnvVar(name, value string) {
 	s.Env = append(s.Env, prefix+value)
 }
 
-func (s *Session) SetDir(dir string) Task {
-	return &funcTask{
+func (s *Session) SetDir(dir string) Job {
+	return &funcJob{
 		name: fmt.Sprintf("chdir(%s)", dir),
 		task: func(ctx context.Context, s *State) error {
 			s.Dir = s.Path(dir)

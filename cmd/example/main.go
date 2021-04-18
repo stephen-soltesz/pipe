@@ -39,7 +39,7 @@ command / operation / task / job / jx
 hybrid shell go program script
 
 
-shx.Task
+shx.Job
 
 shx.Func
 shx.System
@@ -75,7 +75,7 @@ func allrepos(ctx context.Context) ([]*github.Repository, error) {
 	return allRepos, nil
 }
 
-func dirMissing(dirname string) shx.Task {
+func dirMissing(dirname string) shx.Job {
 	return shx.Func(
 		fmt.Sprintf("test -d %s", dirname),
 		func(ctx context.Context, s *shx.State) error {
@@ -116,7 +116,7 @@ func eofErr(err error) error {
 	return err
 }
 
-func FuncForEachLine(run func(line string) error) shx.Task {
+func FuncForEachLine(run func(line string) error) shx.Job {
 	return shx.Func(
 		"foreachline",
 		func(ctx context.Context, s *shx.State) error {
@@ -137,7 +137,7 @@ func FuncForEachLine(run func(line string) error) shx.Task {
 	)
 }
 
-func dateSequence(end string) shx.Task {
+func dateSequence(end string) shx.Job {
 	return shx.Func(
 		"date sequence",
 		func(ctx context.Context, s *shx.State) error {
@@ -233,7 +233,7 @@ func cloc(ctx context.Context, dir string) {
 				changed := fields[2]
 				// logx.Debug.Println(line)
 
-				t := []shx.Task{}
+				t := []shx.Job{}
 				if changed == "true" {
 					t = append(t, shx.System("git checkout "+commit+
 						"; cloc --read-lang-def=$HOME/out.langs --json . | jq . > out.json"))
@@ -246,12 +246,23 @@ func cloc(ctx context.Context, dir string) {
 					date, repo, date, repo,
 				)
 				t = append(t, shx.System(cmd))
-				return shx.Run(shx.Script(t...))
+				return shx.Run(ctx, shx.Script(t...))
 			}),
 		),
 	)
 	err = runcloc.Run(ctx, s)
 	rtx.Must(err, "failed to collect commit list")
+}
+
+func ifThen(cond shx.Job, yes shx.Job) shx.Job {
+	return shx.Func(
+		fmt.Sprintf("if (%s) ; then %s", cond.String(), yes.String()),
+		func(ctx context.Context, s *shx.State) error {
+			if err := cond.Run(ctx, s); err == nil {
+				return yes.Run(ctx, s)
+			}
+			return nil
+		})
 }
 
 func clone(ctx context.Context, lines []string) {
@@ -269,7 +280,7 @@ func clone(ctx context.Context, lines []string) {
 	for i := range lines {
 		dirname := filepath.Base(lines[i])
 		l := shx.Script(
-			shx.IfThen(
+			ifThen(
 				dirMissing(dirname),
 				shx.System("git clone "+lines[i]+" "+dirname),
 			),
