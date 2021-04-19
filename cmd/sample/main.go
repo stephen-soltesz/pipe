@@ -4,8 +4,10 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"os"
 
-	. "github.com/stephen-soltesz/pipe/shx"
+	"github.com/m-lab/go/rtx"
+	"github.com/stephen-soltesz/pipe/shx"
 )
 
 var (
@@ -19,23 +21,26 @@ func init() {
 func main() {
 	flag.Parse()
 
-	s := New()
-	s.SetDryRun(dryrun)
-	// s.SetDir("/")
+	wd, err := os.Getwd()
+	rtx.Must(err, "failed to get working directory")
 
-	sc := Script(
-		SetEnv("FOO", "TEST"),
-		Exec("pwd"),
-		// Exec("/bin/false"),
-		Exec("env"),
-		Pipe(
-			Exec("ls"),
-			Exec("cat"),
-			WriteFile("output.log", 0777),
+	s := shx.New()
+	s.SetDryRun(dryrun)
+	s.SetDir(wd)
+
+	sc := shx.Script(
+		shx.SetEnv("FOO", "TEST"),
+		shx.Exec("pwd"),
+		shx.Exec("env"),
+		shx.Pipe(
+			shx.Exec("ls"),
+			shx.Exec("cat"),
+			shx.WriteFile("output.log", 0777),
 		),
+		// Exec("false"),
 	)
 	ctx := context.Background()
-	err := sc.Run(ctx, s)
+	err = sc.Run(ctx, s)
 	if err != nil {
 		fmt.Println(err)
 	}

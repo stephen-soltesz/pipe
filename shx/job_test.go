@@ -8,8 +8,6 @@ import (
 	"os"
 	"path"
 	"testing"
-
-	"github.com/m-lab/go/testingx"
 )
 
 func init() {
@@ -17,9 +15,7 @@ func init() {
 }
 
 func Test_scriptJob_Run(t *testing.T) {
-	tmpdir, err := ioutil.TempDir("", "shx-testing-")
-	testingx.Must(t, err, "failed")
-	defer os.RemoveAll(tmpdir)
+	tmpdir := t.TempDir()
 
 	tests := []struct {
 		name    string
@@ -97,9 +93,7 @@ func Test_scriptJob_String(t *testing.T) {
 }
 
 func Test_pipeJob_Run(t *testing.T) {
-	tmpdir, err := ioutil.TempDir("", "shx-testing-")
-	testingx.Must(t, err, "failed")
-	defer os.RemoveAll(tmpdir)
+	tmpdir := t.TempDir()
 
 	tests := []struct {
 		name    string
@@ -136,4 +130,20 @@ func Test_pipeJob_Run(t *testing.T) {
 			}
 		})
 	}
+}
+
+func Example() {
+	sc := Script(
+		SetEnv("FOO", "BAR"),
+		Exec("env"),
+	)
+	s := &State{
+		Stdout: os.Stdout,
+	}
+	ctx := context.Background()
+	err := sc.Run(ctx, s)
+	if err != nil {
+		panic(err)
+	}
+	// Output: FOO=BAR
 }
