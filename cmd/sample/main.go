@@ -2,20 +2,31 @@ package main
 
 import (
 	"context"
+	"flag"
 	"fmt"
 
 	. "github.com/stephen-soltesz/pipe/shx"
 )
 
+var (
+	dryrun bool
+)
+
+func init() {
+	flag.BoolVar(&dryrun, "dryrun", false, "enable dryrun mode for script")
+}
+
 func main() {
+	flag.Parse()
+
 	s := New()
-	// s.SetDryRun(true)
+	s.SetDryRun(dryrun)
 	// s.SetDir("/")
 
 	sc := Script(
 		SetEnv("FOO", "TEST"),
 		Exec("pwd"),
-		Exec("/bin/false"),
+		// Exec("/bin/false"),
 		Exec("env"),
 		Pipe(
 			Exec("ls"),
@@ -25,6 +36,8 @@ func main() {
 	)
 	ctx := context.Background()
 	err := sc.Run(ctx, s)
-	fmt.Println(err)
+	if err != nil {
+		fmt.Println(err)
+	}
 
 }
