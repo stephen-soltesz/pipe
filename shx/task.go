@@ -14,23 +14,6 @@ import (
 )
 
 /*
-pipe
-shell
-shx
-compose
-gosh
-script
-
-ops.Sh
-cmd.Sh
-script
-command / operation / task / job / jx
-hybrid shell go program script
-
-Task
-Job
-Cmd
-
 shx.Job
 
 shx.Func
@@ -40,6 +23,9 @@ shx.Script
 shx.System
 
 s := New()
+s.SetDryRun(true)
+s.SetDir("/"")
+
 sc := Script(
 	SetEnv("FOO", "TEST")
 	Chdir("/"),
@@ -178,46 +164,6 @@ func Func(name string, task func(ctx context.Context, s *State) error) Job {
 	}
 }
 
-/*
-func IfThen(cond Job, yes Job) Job {
-	return &funcJob{
-		name: fmt.Sprintf("if (%s) ; then %s", cond.String(), yes.String()),
-		task: func(ctx context.Context, s *State) error {
-			if err := cond.Run(ctx, s); err == nil {
-				return yes.Run(ctx, s)
-			}
-			return nil
-		},
-	}
-}
-
-func IfThenElse(cond Job, yes Job, no Job) Job {
-	return &funcJob{
-		name: fmt.Sprintf("if (%s) ; then %s else %s", cond.String(), yes.String(), no.String()),
-		task: func(ctx context.Context, s *State) error {
-			if err := cond.Run(ctx, s); err == nil {
-				return yes.Run(ctx, s)
-			} else {
-				return no.Run(ctx, s)
-			}
-		},
-	}
-}
-
-// True is a Job that unconditionally returns successfully.
-func True() Job {
-	return &funcJob{
-		name: "true",
-		task: func(ctx context.Context, s *State) error {
-			return nil
-		},
-	}
-}
-*/
-
-//func Substitute(cmd string) Job {
-//
-//}
 type readerCtx struct {
 	ctx context.Context
 	io.Reader
@@ -295,11 +241,7 @@ func Chdir(dir string) Job {
 	return &funcJob{
 		name: fmt.Sprintf("chdir(%s)", dir),
 		task: func(ctx context.Context, s *State) error {
-			d, err := chdir(s.Path(dir))
-			if err != nil {
-				return err
-			}
-			s.Dir = d
+			s.Dir = s.Path(dir)
 			return nil
 		},
 	}
@@ -325,24 +267,24 @@ func (c *scriptJob) Run(ctx context.Context, s *State) error {
 		logx.Debug.Println(c.Subtasks[i].String())
 		err := c.Subtasks[i].Run(ctx, s)
 		if err != nil {
-			return err
+			str := c.stringUntil(i)
+			return fmt.Errorf("%s %w", str, err)
 		}
 	}
 	return nil
 }
 
-/*
-func (c *scriptJob) Kill() {
-	for i := range c.Subtasks {
-		logx.Debug.Println("killing", c.Subtasks[i].String())
-		c.Subtasks[i].Kill()
-	}
-}
-*/
-
 func (c *scriptJob) String() string {
 	s := []string{c.Name}
 	for i := range c.Subtasks {
+		s = append(s, fmt.Sprintf("line %2d: %s", i, c.Subtasks[i].String()))
+	}
+	return strings.Join(s, ";\n")
+}
+
+func (c *scriptJob) stringUntil(v int) string {
+	s := []string{}
+	for i := 0; i < v; i++ {
 		s = append(s, fmt.Sprintf("line %2d: %s", i, c.Subtasks[i].String()))
 	}
 	return strings.Join(s, ";\n")
@@ -419,15 +361,6 @@ func closeReader(r io.Reader) error {
 	return nil
 }
 
-/*
-func (c *pipeJob) Kill() {
-	for i := range c.Subtasks {
-		logx.Debug.Println("killing", c.Subtasks[i].String())
-		c.Subtasks[i].Kill()
-	}
-}
-*/
-
 func (c *pipeJob) String() string {
 	s := []string{}
 	for i := range c.Subtasks {
@@ -449,11 +382,6 @@ func (f *funcJob) Run(ctx context.Context, s *State) error {
 func (f *funcJob) String() string {
 	return f.name
 }
-
-/*
-func (f *funcJob) Kill() {
-}
-*/
 
 type execJob struct {
 	name string
@@ -492,18 +420,6 @@ func (f *execJob) Run(ctx context.Context, s *State) error {
 	return nil
 }
 
-/*
-func (f *execJob) Kill() {
-	f.m.Lock()
-	p := f.p
-	f.cancel = true
-	f.m.Unlock()
-	if p != nil {
-		p.Kill()
-	}
-}
-*/
-
 func (f *execJob) String() string {
 	return fmt.Sprintf("%s %s", f.name, strings.Join(f.args, " "))
 }
@@ -522,21 +438,4 @@ func nPipes(r io.Reader, w io.Writer, n int) []rw {
 	}
 	p = append(p, rw{R: r, W: w})
 	return p
-}
-
-func chdir(d string) (string, error) {
-	if d == "" {
-		cwd, err := os.Getwd()
-		if err != nil {
-			return "", err
-		}
-		logx.Debug.Printf("chdir(%s)", cwd)
-		return cwd, nil
-	}
-	logx.Debug.Printf("chdir(%s)", d)
-	err := os.Chdir(d)
-	if err != nil {
-		return "", err
-	}
-	return d, nil
 }

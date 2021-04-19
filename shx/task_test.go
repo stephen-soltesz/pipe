@@ -111,7 +111,6 @@ func Test_pipeJob_Run(t *testing.T) {
 		{
 			name: "okay",
 			t: []Job{
-				Chdir(tmpdir),
 				System("pwd"),
 				System("cat"),
 				WriteFile("output.log", 0666),
@@ -124,6 +123,7 @@ func Test_pipeJob_Run(t *testing.T) {
 			c := Pipe(tt.t...)
 			ctx := context.Background()
 			s := New()
+			s.Dir = tmpdir
 			if err := c.Run(ctx, s); (err != nil) != tt.wantErr {
 				t.Errorf("pipeJob.Run() error = %v, wantErr %v", err, tt.wantErr)
 			}
