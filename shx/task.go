@@ -61,12 +61,24 @@ func New() *State {
 	return s
 }
 
-func NewState(input io.ReadCloser, output, outerr io.WriteCloser) *State {
+func NewState(input io.Reader, output, outerr io.Writer) *State {
 	return &State{
 		Stdin:  input,
 		Stdout: output,
 		Stderr: outerr,
 	}
+}
+
+func (s *State) SetDryRun(val bool) bool {
+	prev := s.DryRun
+	s.DryRun = val
+	return prev
+}
+
+func (s *State) SetDir(dir string) string {
+	prev := s.Dir
+	s.Dir = dir
+	return prev
 }
 
 // Path returns the provided path relative to the state's current directory.
