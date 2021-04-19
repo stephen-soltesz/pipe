@@ -417,7 +417,7 @@ func (f *execJob) Run(ctx context.Context, s *State) error {
 		logx.Debug.Printf("\tCMD: %s", f.name)
 		logx.Debug.Printf("\tARG: %s", f.args)
 		logx.Debug.Printf("\tDIR: %s", s.Dir)
-		logx.Debug.Printf("\tENV: %s", s.Env)
+		// logx.Debug.Printf("\tENV: %s", s.Env)
 		return nil
 	}
 	err := cmd.Start()
