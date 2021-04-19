@@ -40,6 +40,9 @@ sc.Run(ctx, s)
 
 */
 
+// State is the shx Job configuration. Callers provide the first State
+// instance, and as a Job executes it creates new State instances derived from
+// the original, e.g. for Pipes and subcommands.
 type State struct {
 	Stdin  io.Reader
 	Stdout io.Writer
@@ -49,6 +52,9 @@ type State struct {
 	DryRun bool
 }
 
+// New creates a State instance using current process Stdin, Stdout, and Stderr.
+// As well, the returned State includes the current process working directory
+// and environment.
 func New() *State {
 	d, _ := os.Getwd()
 	s := &State{
@@ -61,6 +67,7 @@ func New() *State {
 	return s
 }
 
+/*
 func NewState(input io.Reader, output, outerr io.Writer) *State {
 	return &State{
 		Stdin:  input,
@@ -68,22 +75,26 @@ func NewState(input io.Reader, output, outerr io.Writer) *State {
 		Stderr: outerr,
 	}
 }
+*/
 
+// SetDryRun sets the DryRun value for this State instance and returns the
+// previous value.
 func (s *State) SetDryRun(val bool) bool {
 	prev := s.DryRun
 	s.DryRun = val
 	return prev
 }
 
+// SetDir sets the Dir value for this State instance and returns the previous value.
 func (s *State) SetDir(dir string) string {
 	prev := s.Dir
 	s.Dir = dir
 	return prev
 }
 
-// Path returns the provided path relative to the state's current directory.
-// If multiple arguments are provided, they're joined via filepath.Join.
-// If path is absolute, it is taken by itself.
+// Path returns the provided path relative to the state's current directory. If
+// multiple arguments are provided, they're joined via filepath.Join. If path is
+// absolute, it is taken by itself.
 func (s *State) Path(path ...string) string {
 	if len(path) == 0 {
 		return s.Dir
@@ -124,23 +135,25 @@ func (s *State) GetEnv(name string) string {
 	return ""
 }
 
+// Job is the primary interface supported by this package.
 type Job interface {
+	// Run executes the Job using the given State. A Job implementation should
+	// terminate when the given context is cancelled.
 	Run(ctx context.Context, s *State) error
-	// Kill()
+
+	// String returns a readable representation of the Job operation.
 	String() string
 }
 
-type NopCloser struct {
-	io.Writer
-}
-
-func (NopCloser) Close() error { return nil }
-
+/*
 func Run(ctx context.Context, t Job) error {
 	s := New()
 	return t.Run(ctx, s)
 }
+*/
 
+// Script creates a Job that executes the given Jobs in sequence. If any Job
+// returns an error, execution stops.
 func Script(t ...Job) Job {
 	return &scriptJob{
 		Name:     "# Script",
@@ -148,6 +161,9 @@ func Script(t ...Job) Job {
 	}
 }
 
+// Pipe creates a Job that executes the given Jobs as a "shell pipeline",
+// passing the output of the first to the input of the next, and so on.
+// If any Job returns an error, the first error is returned.
 func Pipe(t ...Job) Job {
 	return &pipeJob{
 		Name:     "# Pipeline",
@@ -155,13 +171,7 @@ func Pipe(t ...Job) Job {
 	}
 }
 
-func System(cmd string) Job {
-	return &execJob{
-		name: "/bin/sh",
-		args: []string{"-c", cmd},
-	}
-}
-
+// Exec creates a Job to exec the given command.
 func Exec(cmd string, args ...string) Job {
 	return &execJob{
 		name: cmd,
@@ -169,10 +179,20 @@ func Exec(cmd string, args ...string) Job {
 	}
 }
 
-func Func(name string, task func(ctx context.Context, s *State) error) Job {
+// System is an Exec job that interprets the given cmd using "/bin/sh".
+func System(cmd string) Job {
+	return &execJob{
+		name: "/bin/sh",
+		args: []string{"-c", cmd},
+	}
+}
+
+// Func creates a Job that runs the given job function. Job functions should
+// honor the passed context to support cancelation.
+func Func(name string, job func(ctx context.Context, s *State) error) Job {
 	return &funcJob{
 		name: name,
-		task: task,
+		task: job,
 	}
 }
 
@@ -188,12 +208,14 @@ func (r *readerCtx) Read(p []byte) (n int, err error) {
 	return r.Reader.Read(p)
 }
 
-// NewReaderContext gets a context-aware io.Reader.
+// NewReaderContext creates a context-aware io.Reader. This is helpful for
+// making otherwise unbounded IO operations context-aware, e.g. io.Copy().
 func NewReaderContext(ctx context.Context, r io.Reader) io.Reader {
 	return &readerCtx{ctx: ctx, Reader: r}
 }
 
-// Read reads data from r and writes it to the pipe's stdout.
+// Read creates a Job that reads from the given reader and writes it to Job's
+// stdout. Read creates a context-aware reader from the given reader.
 func Read(r io.Reader) Job {
 	return &funcJob{
 		name: fmt.Sprintf("read(%v)", r),
@@ -205,6 +227,8 @@ func Read(r io.Reader) Job {
 	}
 }
 
+// ReadFile creates a Job that reads from the named file and writes it to the
+// Job's stdout.
 func ReadFile(path string) Job {
 	return &funcJob{
 		name: fmt.Sprintf("ReadFile(%s)", path),
@@ -221,10 +245,11 @@ func ReadFile(path string) Job {
 	}
 }
 
-// Write writes to w the data read from the pipe's stdin.
+// Write creates a Job that reads from the Job input and writes to the given
+// writer. Write creates a context-aware reader for the Job input reader.
 func Write(w io.Writer) Job {
 	return &funcJob{
-		name: "write",
+		name: fmt.Sprintf("write(%v)", w),
 		task: func(ctx context.Context, s *State) error {
 			r2 := NewReaderContext(ctx, s.Stdin)
 			_, err := io.Copy(w, r2)
@@ -233,6 +258,9 @@ func Write(w io.Writer) Job {
 	}
 }
 
+// WriteFile creates a Job that reads from the Job input and writes to the named
+// file. The output path is created if it does not exist and is truncated if it
+// does.
 func WriteFile(path string, perm os.FileMode) Job {
 	return &funcJob{
 		name: fmt.Sprintf("WriteFile(%s)", path),
@@ -249,6 +277,8 @@ func WriteFile(path string, perm os.FileMode) Job {
 	}
 }
 
+// Chdir creates Job that changes the Job state Dir. This does not alter the
+// process working directory.
 func Chdir(dir string) Job {
 	return &funcJob{
 		name: fmt.Sprintf("chdir(%s)", dir),
@@ -259,6 +289,8 @@ func Chdir(dir string) Job {
 	}
 }
 
+// SetEnv creates a Job that changes to Job state Env by setting name=value.
+// SetEnv is most helpful in Script() Jobs.
 func SetEnv(name string, value string) Job {
 	return &funcJob{
 		name: fmt.Sprintf("export %s=%s", name, value),
@@ -279,8 +311,8 @@ func (c *scriptJob) Run(ctx context.Context, s *State) error {
 		logx.Debug.Println(c.Subtasks[i].String())
 		err := c.Subtasks[i].Run(ctx, s)
 		if err != nil {
-			str := c.stringUntil(i)
-			return fmt.Errorf("%s %w", str, err)
+			str := c.stringUntil(i + 1)
+			return fmt.Errorf("%s - %w", str, err)
 		}
 	}
 	return nil
