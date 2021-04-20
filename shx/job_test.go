@@ -90,7 +90,7 @@ func Test_scriptJob_String(t *testing.T) {
 	}
 }
 
-func Test_pipeJob_Run(t *testing.T) {
+func TestPipe(t *testing.T) {
 	tmpdir := t.TempDir()
 
 	tests := []struct {
@@ -109,6 +109,23 @@ func Test_pipeJob_Run(t *testing.T) {
 			},
 			want: tmpdir + "\n",
 		},
+		{
+			name: "success-readcloser-writecloser",
+			t: []Job{
+				Func(
+					"reset-writer",
+					func(ctx context.Context, s *State) error {
+						s.Stdout = bytes.NewBuffer(nil)
+						return nil
+					}),
+				Func(
+					"reset-reader",
+					func(ctx context.Context, s *State) error {
+						s.Stdin = bytes.NewBuffer(nil)
+						return nil
+					}),
+			},
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -118,6 +135,9 @@ func Test_pipeJob_Run(t *testing.T) {
 			s.Dir = tmpdir
 			if err := c.Run(ctx, s); (err != nil) != tt.wantErr {
 				t.Errorf("pipeJob.Run() error = %v, wantErr %v", err, tt.wantErr)
+			}
+			if tt.want == "" {
+				return
 			}
 			b, err := ioutil.ReadFile(path.Join(tmpdir, "output.log"))
 			if err != nil && !tt.wantErr {
