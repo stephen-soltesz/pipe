@@ -1,26 +1,27 @@
+// Package shx defines a Job interface and group operations on Jobs such as
+// shx.Script and shx.Pipe that mimick shell operations for Go programs.
+//
+// A Job State controls the input and output of the command, as well as its
+// working directory, environment, and whether to run the job in a DryRun mode.
+//
+// The shx package aims to be as simple as possible without sacrificing
+// flexibility and expressiveness.
+//
 package shx
 
 import (
 	"context"
 	"fmt"
 	"io"
+	"log"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
 	"sync"
-
-	"github.com/m-lab/go/logx"
 )
 
 /*
-shx.Job
-
-shx.Func
-shx.Exec
-shx.Pipe
-shx.Script
-shx.System
 
 s := New()
 s.SetDryRun(true)
@@ -135,25 +136,6 @@ type Job interface {
 	String() string
 }
 
-// Script creates a Job that executes the given Jobs in sequence. If any Job
-// returns an error, execution stops.
-func Script(t ...Job) Job {
-	return &scriptJob{
-		Name:     "# Script",
-		Subtasks: t,
-	}
-}
-
-// Pipe creates a Job that executes the given Jobs as a "shell pipeline",
-// passing the output of the first to the input of the next, and so on.
-// If any Job returns an error, the first error is returned.
-func Pipe(t ...Job) Job {
-	return &pipeJob{
-		Name:     "# Pipeline",
-		Subtasks: t,
-	}
-}
-
 // Exec creates a Job to exec the given command.
 func Exec(cmd string, args ...string) Job {
 	return &execJob{
@@ -170,13 +152,64 @@ func System(cmd string) Job {
 	}
 }
 
+type execJob struct {
+	name string
+	args []string
+}
+
+func (f *execJob) Run(ctx context.Context, s *State) error {
+	if s.DryRun {
+		log.Printf("Exec:")
+		log.Printf("\tCMD: %s", f.name)
+		log.Printf("\tARG: %s", f.args)
+		log.Printf("\tDIR: %s", s.Dir)
+		log.Printf("\tENV: %s", s.Env)
+		return nil
+	}
+	cmd := exec.CommandContext(ctx, f.name, f.args...)
+	cmd.Dir = s.Dir
+	cmd.Env = s.Env
+	cmd.Stdin = s.Stdin
+	cmd.Stdout = s.Stdout
+	cmd.Stderr = s.Stderr
+	err := cmd.Start()
+	if err != nil {
+		return err
+	}
+	if err := cmd.Wait(); err != nil {
+		return fmt.Errorf("%s %w", f.String(), err)
+	}
+	return nil
+}
+
+func (f *execJob) String() string {
+	return fmt.Sprintf("%s %s", f.name, strings.Join(f.args, " "))
+}
+
 // Func creates a Job that runs the given job function. Job functions should
 // honor the passed context to support cancelation.
 func Func(name string, job func(ctx context.Context, s *State) error) Job {
 	return &funcJob{
 		name: name,
-		task: job,
+		job:  job,
 	}
+}
+
+type funcJob struct {
+	name string
+	job  func(ctx context.Context, s *State) error
+}
+
+func (f *funcJob) Run(ctx context.Context, s *State) error {
+	if s.DryRun {
+		log.Println(f.String())
+		return nil
+	}
+	return f.job(ctx, s)
+}
+
+func (f *funcJob) String() string {
+	return f.name
 }
 
 type readerCtx struct {
@@ -202,7 +235,7 @@ func NewReaderContext(ctx context.Context, r io.Reader) io.Reader {
 func Read(r io.Reader) Job {
 	return &funcJob{
 		name: fmt.Sprintf("read(%v)", r),
-		task: func(ctx context.Context, s *State) error {
+		job: func(ctx context.Context, s *State) error {
 			_, err := io.Copy(s.Stdout, NewReaderContext(ctx, r))
 			return err
 		},
@@ -214,7 +247,7 @@ func Read(r io.Reader) Job {
 func ReadFile(path string) Job {
 	return &funcJob{
 		name: fmt.Sprintf("ReadFile(%s)", path),
-		task: func(ctx context.Context, s *State) error {
+		job: func(ctx context.Context, s *State) error {
 			file, err := os.Open(s.Path(path))
 			if err != nil {
 				return err
@@ -231,7 +264,7 @@ func ReadFile(path string) Job {
 func Write(w io.Writer) Job {
 	return &funcJob{
 		name: fmt.Sprintf("write(%v)", w),
-		task: func(ctx context.Context, s *State) error {
+		job: func(ctx context.Context, s *State) error {
 			_, err := io.Copy(w, NewReaderContext(ctx, s.Stdin))
 			return err
 		},
@@ -244,7 +277,7 @@ func Write(w io.Writer) Job {
 func WriteFile(path string, perm os.FileMode) Job {
 	return &funcJob{
 		name: fmt.Sprintf("WriteFile(%s)", path),
-		task: func(ctx context.Context, s *State) error {
+		job: func(ctx context.Context, s *State) error {
 			file, err := os.OpenFile(s.Path(path), os.O_WRONLY|os.O_CREATE|os.O_TRUNC, perm)
 			if err != nil {
 				return err
@@ -261,7 +294,7 @@ func WriteFile(path string, perm os.FileMode) Job {
 func Chdir(dir string) Job {
 	return &funcJob{
 		name: fmt.Sprintf("chdir(%s)", dir),
-		task: func(ctx context.Context, s *State) error {
+		job: func(ctx context.Context, s *State) error {
 			s.Dir = s.Path(dir)
 			return nil
 		},
@@ -273,22 +306,34 @@ func Chdir(dir string) Job {
 func SetEnv(name string, value string) Job {
 	return &funcJob{
 		name: fmt.Sprintf("export %s=%s", name, value),
-		task: func(ctx context.Context, s *State) error {
+		job: func(ctx context.Context, s *State) error {
 			s.SetEnv(name, value)
 			return nil
 		},
 	}
 }
 
+// Script creates a Job that executes the given Jobs in sequence. If any Job
+// returns an error, execution stops.
+func Script(t ...Job) Job {
+	return &scriptJob{
+		Name: "# Script",
+		Jobs: t,
+	}
+}
+
 type scriptJob struct {
-	Name     string
-	Subtasks []Job
+	Name string
+	Jobs []Job
 }
 
 func (c *scriptJob) Run(ctx context.Context, s *State) error {
-	for i := range c.Subtasks {
-		logx.Debug.Println(c.Subtasks[i].String())
-		err := c.Subtasks[i].Run(ctx, s)
+	if s.DryRun {
+		log.Println(c.String())
+		return nil
+	}
+	for i := range c.Jobs {
+		err := c.Jobs[i].Run(ctx, s)
 		if err != nil {
 			str := c.stringUntil(i + 1)
 			return fmt.Errorf("%s - %w", str, err)
@@ -299,8 +344,8 @@ func (c *scriptJob) Run(ctx context.Context, s *State) error {
 
 func (c *scriptJob) String() string {
 	s := []string{c.Name}
-	for i := range c.Subtasks {
-		s = append(s, fmt.Sprintf("line %2d: %s", i, c.Subtasks[i].String()))
+	for i := range c.Jobs {
+		s = append(s, fmt.Sprintf("line %2d: %s", i, c.Jobs[i].String()))
 	}
 	return strings.Join(s, ";\n")
 }
@@ -308,19 +353,32 @@ func (c *scriptJob) String() string {
 func (c *scriptJob) stringUntil(v int) string {
 	s := []string{}
 	for i := 0; i < v; i++ {
-		s = append(s, fmt.Sprintf("line %2d: %s", i, c.Subtasks[i].String()))
+		s = append(s, fmt.Sprintf("line %2d: %s", i, c.Jobs[i].String()))
 	}
 	return strings.Join(s, ";\n")
 }
 
+// Pipe creates a Job that executes the given Jobs as a "shell pipeline",
+// passing the output of the first to the input of the next, and so on.
+// If any Job returns an error, the first error is returned.
+func Pipe(t ...Job) Job {
+	return &pipeJob{
+		Name: "# Pipeline",
+		Jobs: t,
+	}
+}
+
 type pipeJob struct {
-	Name     string
-	Subtasks []Job
+	Name string
+	Jobs []Job
 }
 
 func (c *pipeJob) Run(ctx context.Context, z *State) error {
-	logx.Debug.Println(c.String())
-	e := c.Subtasks
+	if z.DryRun {
+		log.Println(c.String())
+		return nil
+	}
+	e := c.Jobs
 	p := nPipes(z.Stdin, z.Stdout, len(e))
 	s := make([]*State, len(e))
 	for i := range e {
@@ -333,12 +391,22 @@ func (c *pipeJob) Run(ctx context.Context, z *State) error {
 			DryRun: z.DryRun,
 		}
 	}
-	wg := sync.WaitGroup{}
+	// Create channel for all pipe job return values.
 	done := make(chan error, len(e))
+
+	// Create a wait group to block on all Jobs returning.
+	wg := sync.WaitGroup{}
+	defer wg.Wait()
+
+	// Context cancellation will execute before waiting on wait group.
+	ctx2, cancel2 := context.WithCancel(ctx)
+	defer cancel2()
+
+	// Run all jobs in reverse order, end of pipe to beginning.
 	for i := len(e) - 1; i >= 0; i-- {
 		wg.Add(1)
 		go func(n, i int, e Job, s *State) {
-			err := e.Run(ctx, s)
+			err := e.Run(ctx2, s)
 			// Send possible errors to outer loop.
 			done <- err
 			wg.Done()
@@ -350,15 +418,17 @@ func (c *pipeJob) Run(ctx context.Context, z *State) error {
 			}
 		}(len(e), i, e[i], s[i])
 	}
-	wg.Wait()
 
+	// Wait for goroutines to return or context cancellation.
 	for range e {
 		var err error
 		select {
 		case err = <-done:
 		case <-ctx.Done():
+			// Continue colleting errors after context cancellation.
 			err = <-done
 		}
+		// Return first error. Deferred wait group will block until all Jobs return.
 		if err != nil {
 			return err
 		}
@@ -386,65 +456,10 @@ func closeReader(r io.Reader) error {
 
 func (c *pipeJob) String() string {
 	s := []string{}
-	for i := range c.Subtasks {
-		s = append(s, c.Subtasks[i].String())
+	for i := range c.Jobs {
+		s = append(s, c.Jobs[i].String())
 	}
 	return strings.Join(s, " | ")
-}
-
-type funcJob struct {
-	name string
-	task func(ctx context.Context, s *State) error
-}
-
-func (f *funcJob) Run(ctx context.Context, s *State) error {
-	logx.Debug.Println(f.String())
-	return f.task(ctx, s)
-}
-
-func (f *funcJob) String() string {
-	return f.name
-}
-
-type execJob struct {
-	name string
-	args []string
-
-	m sync.Mutex
-	p *os.Process
-}
-
-func (f *execJob) Run(ctx context.Context, s *State) error {
-	f.m.Lock()
-	cmd := exec.CommandContext(ctx, f.name, f.args...)
-	cmd.Dir = s.Dir
-	cmd.Env = s.Env
-	cmd.Stdin = s.Stdin
-	cmd.Stdout = s.Stdout
-	cmd.Stderr = s.Stderr
-	if s.DryRun {
-		f.m.Unlock()
-		logx.Debug.Printf("Exec:")
-		logx.Debug.Printf("\tCMD: %s", f.name)
-		logx.Debug.Printf("\tARG: %s", f.args)
-		logx.Debug.Printf("\tDIR: %s", s.Dir)
-		// logx.Debug.Printf("\tENV: %s", s.Env)
-		return nil
-	}
-	err := cmd.Start()
-	f.p = cmd.Process
-	f.m.Unlock()
-	if err != nil {
-		return err
-	}
-	if err := cmd.Wait(); err != nil {
-		return fmt.Errorf("%s %w", f.String(), err)
-	}
-	return nil
-}
-
-func (f *execJob) String() string {
-	return fmt.Sprintf("%s %s", f.name, strings.Join(f.args, " "))
 }
 
 type rw struct {

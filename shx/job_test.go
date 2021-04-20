@@ -1,8 +1,9 @@
-package shx
+package shx_test
 
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
 	"io/ioutil"
 	"log"
 	"os"
@@ -10,6 +11,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	. "github.com/stephen-soltesz/pipe/shx"
 )
 
 func init() {
@@ -65,6 +68,23 @@ func Test_scriptJob_Run(t *testing.T) {
 	}
 }
 
+func ExampleScript() {
+	sc := Script(
+		SetEnv("FOO", "BAR"),
+		Exec("env"),
+	)
+	s := &State{
+		Stdout: os.Stdout,
+	}
+	ctx := context.Background()
+	err := sc.Run(ctx, s)
+	if err != nil {
+		panic(err)
+	}
+	// Output: FOO=BAR
+
+}
+
 func Test_scriptJob_String(t *testing.T) {
 	tests := []struct {
 		name string
@@ -88,6 +108,24 @@ func Test_scriptJob_String(t *testing.T) {
 			}
 		})
 	}
+}
+
+func ExamplePipe() {
+	p := Pipe(
+		Exec("ls"),
+		Exec("tail", "-1"),
+		Exec("wc", "-l"),
+	)
+	s := &State{
+		Stdout: os.Stdout,
+	}
+	ctx := context.Background()
+	err := p.Run(ctx, s)
+	if err != nil {
+		panic(err)
+	}
+	// Output: 1
+
 }
 
 func TestPipe(t *testing.T) {
@@ -212,22 +250,6 @@ func TestReadWrite(t *testing.T) {
 	}
 }
 
-func Example() {
-	sc := Script(
-		SetEnv("FOO", "BAR"),
-		Exec("env"),
-	)
-	s := &State{
-		Stdout: os.Stdout,
-	}
-	ctx := context.Background()
-	err := sc.Run(ctx, s)
-	if err != nil {
-		panic(err)
-	}
-	// Output: FOO=BAR
-}
-
 func TestState(t *testing.T) {
 	t.Run("SetState", func(t *testing.T) {
 		s := New()
@@ -264,6 +286,53 @@ func TestState(t *testing.T) {
 			t.Errorf("Path() wrong value; got %q, want %q", p, "/relative/path")
 		}
 	})
+}
+
+func ExampleExec() {
+	ex := Exec("echo", "a", "b")
+	s := &State{
+		Stdout: os.Stdout,
+	}
+	ctx := context.Background()
+	err := ex.Run(ctx, s)
+	if err != nil {
+		panic(err)
+	}
+	// Output: a b
+}
+
+func ExampleSystem() {
+	sys := System("echo a b")
+	s := &State{
+		Stdout: os.Stdout,
+	}
+	ctx := context.Background()
+	err := sys.Run(ctx, s)
+	if err != nil {
+		panic(err)
+	}
+	// Output: a b
+}
+
+func ExampleFunc() {
+	f := Func("example", func(ctx context.Context, s *State) error {
+		b, err := ioutil.ReadAll(s.Stdin)
+		if err != nil {
+			return err
+		}
+		_, err = s.Stdout.Write([]byte(base64.URLEncoding.EncodeToString(b)))
+		return err
+	})
+	s := &State{
+		Stdin:  bytes.NewBuffer([]byte(`{"key":"value"}\n`)),
+		Stdout: os.Stdout,
+	}
+	ctx := context.Background()
+	err := f.Run(ctx, s)
+	if err != nil {
+		panic(err)
+	}
+	// Output: eyJrZXkiOiJ2YWx1ZSJ9XG4=
 }
 
 func TestExec(t *testing.T) {
