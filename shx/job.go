@@ -67,16 +67,6 @@ func New() *State {
 	return s
 }
 
-/*
-func NewState(input io.Reader, output, outerr io.Writer) *State {
-	return &State{
-		Stdin:  input,
-		Stdout: output,
-		Stderr: outerr,
-	}
-}
-*/
-
 // SetDryRun sets the DryRun value for this State instance and returns the
 // previous value.
 func (s *State) SetDryRun(val bool) bool {
@@ -144,13 +134,6 @@ type Job interface {
 	// String returns a readable representation of the Job operation.
 	String() string
 }
-
-/*
-func Run(ctx context.Context, t Job) error {
-	s := New()
-	return t.Run(ctx, s)
-}
-*/
 
 // Script creates a Job that executes the given Jobs in sequence. If any Job
 // returns an error, execution stops.
@@ -220,8 +203,7 @@ func Read(r io.Reader) Job {
 	return &funcJob{
 		name: fmt.Sprintf("read(%v)", r),
 		task: func(ctx context.Context, s *State) error {
-			r2 := NewReaderContext(ctx, r)
-			_, err := io.Copy(s.Stdout, r2)
+			_, err := io.Copy(s.Stdout, NewReaderContext(ctx, r))
 			return err
 		},
 	}
@@ -238,8 +220,7 @@ func ReadFile(path string) Job {
 				return err
 			}
 			defer file.Close()
-			r2 := NewReaderContext(ctx, file)
-			_, err = io.Copy(s.Stdout, r2)
+			_, err = io.Copy(s.Stdout, NewReaderContext(ctx, file))
 			return err
 		},
 	}
@@ -251,8 +232,7 @@ func Write(w io.Writer) Job {
 	return &funcJob{
 		name: fmt.Sprintf("write(%v)", w),
 		task: func(ctx context.Context, s *State) error {
-			r2 := NewReaderContext(ctx, s.Stdin)
-			_, err := io.Copy(w, r2)
+			_, err := io.Copy(w, NewReaderContext(ctx, s.Stdin))
 			return err
 		},
 	}
@@ -270,8 +250,7 @@ func WriteFile(path string, perm os.FileMode) Job {
 				return err
 			}
 			defer file.Close()
-			r2 := NewReaderContext(ctx, s.Stdin)
-			_, err = io.Copy(file, r2)
+			_, err = io.Copy(file, NewReaderContext(ctx, s.Stdin))
 			return err
 		},
 	}
