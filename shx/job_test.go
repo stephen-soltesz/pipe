@@ -19,12 +19,13 @@ func init() {
 	log.SetFlags(log.LUTC | log.Llongfile)
 }
 
-func Test_scriptJob_Run(t *testing.T) {
+func TestScript(t *testing.T) {
 	tmpdir := t.TempDir()
 
 	tests := []struct {
 		name    string
 		t       []Job
+		dryrun  bool
 		want    string
 		wantErr bool
 	}{
@@ -48,6 +49,14 @@ func Test_scriptJob_Run(t *testing.T) {
 			},
 			wantErr: true,
 		},
+		{
+			name: "success-dryrun",
+			t: []Job{
+				Chdir(tmpdir),
+				System("pwd"),
+			},
+			dryrun: true,
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -55,6 +64,7 @@ func Test_scriptJob_Run(t *testing.T) {
 			b := bytes.NewBuffer(nil)
 			s := &State{
 				Stdout: b,
+				DryRun: tt.dryrun,
 			}
 			sc := Script(tt.t...)
 			err := sc.Run(ctx, s)
@@ -85,31 +95,6 @@ func ExampleScript() {
 
 }
 
-func Test_scriptJob_String(t *testing.T) {
-	tests := []struct {
-		name string
-		t    []Job
-		want string
-	}{
-		{
-			name: "success",
-			t: []Job{
-				Chdir("/"),
-				System("pwd"),
-			},
-			want: "# Script;\nline  0: chdir(/);\nline  1: /bin/sh -c pwd",
-		},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			c := Script(tt.t...)
-			if got := c.String(); got != tt.want {
-				t.Errorf("scriptJob.String() = %v, want %v", got, tt.want)
-			}
-		})
-	}
-}
-
 func ExamplePipe() {
 	p := Pipe(
 		Exec("ls"),
@@ -135,6 +120,7 @@ func TestPipe(t *testing.T) {
 		name    string
 		t       []Job
 		z       *State
+		dryrun  bool
 		want    string
 		wantErr bool
 	}{
@@ -146,6 +132,18 @@ func TestPipe(t *testing.T) {
 				WriteFile("output.log", 0666),
 			},
 			want: tmpdir + "\n",
+		},
+		{
+			name: "success-dryrun",
+			t: []Job{
+				System("pwd"),
+				System("cat"),
+				Func("test-function", func(ctx context.Context, s *State) error {
+					// Does nothing.
+					return nil
+				}),
+			},
+			dryrun: true,
 		},
 		{
 			name: "success-readcloser-writecloser",
@@ -170,6 +168,7 @@ func TestPipe(t *testing.T) {
 			c := Pipe(tt.t...)
 			ctx := context.Background()
 			s := New()
+			s.DryRun = tt.dryrun
 			s.Dir = tmpdir
 			if err := c.Run(ctx, s); (err != nil) != tt.wantErr {
 				t.Errorf("pipeJob.Run() error = %v, wantErr %v", err, tt.wantErr)
@@ -380,5 +379,41 @@ func TestExec(t *testing.T) {
 				t.Errorf("Exec() = got %v, want %v", b.String(), tt.want)
 			}
 		})
+	}
+}
+
+func TestFunc(t *testing.T) {
+	count := 0
+	tests := []struct {
+		name   string
+		job    func(ctx context.Context, s *State) error
+		dryrun bool
+	}{
+		{
+			name: "success",
+			job:  func(ctx context.Context, s *State) error { count++; return nil },
+		},
+		{
+			name:   "success-dryrun",
+			job:    func(ctx context.Context, s *State) error { count++; return nil },
+			dryrun: true,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			f := Func(tt.name, tt.job)
+			ctx := context.Background()
+			s := &State{
+				Stdout: os.Stdout,
+				DryRun: tt.dryrun,
+			}
+			err := f.Run(ctx, s)
+			if err != nil {
+				t.Errorf("Func() failed; got %v, want nil", err)
+			}
+		})
+	}
+	if count != 1 {
+		t.Errorf("Func() count incorrect; got %d, want 1", count)
 	}
 }
