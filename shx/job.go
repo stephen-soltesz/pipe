@@ -1,12 +1,19 @@
-// Package shx defines a Job interface and group operations on Jobs such as
-// shx.Script and shx.Pipe that mimick shell operations for Go programs.
+// Package shx provides shell-like jobs for Go using simple primitives while
+// preserving flexibility and control.
 //
-// A Job State controls the input and output of the command, as well as its
-// working directory, environment, and whether to run the job in a DryRun mode.
+// A Job represents one or more operations. Single operations could represent
+// running a command (Exec) or reading a file (ReadFile), while multiple Jobs
+// can be combined into a sequence (Script) or pipeline (Pipe), which are
+// themselves a Job.
 //
-// The shx package aims to be as simple as possible without sacrificing
-// flexibility and expressiveness.
+// When a Job runs, it uses State to control its input and output, as well as
+// its working directory, environment, or whether to run the job in a DryRun
+// mode.
 //
+// Examples are provided for all primitive Job types: Exec, System, Func, Pipe,
+// Script. Additional helper Jobs make creating more complex operations a little
+// easier. Advanced users may create their own Job implementations for even more
+// flexibility.
 package shx
 
 import (
@@ -21,29 +28,9 @@ import (
 	"sync"
 )
 
-/*
-
-s := New()
-s.SetDryRun(true)
-s.SetDir("/"")
-
-sc := Script(
-	SetEnv("FOO", "TEST")
-	Chdir("/"),
-	Exec("pwd"),
-	Pipe(
-		Exec("ls"),
-		Exec("cat"),
-		WriteFile("output.", 0777),
-	),
-)
-sc.Run(ctx, s)
-
-*/
-
-// State is the shx Job configuration. Callers provide the first State
-// instance, and as a Job executes it creates new State instances derived from
-// the original, e.g. for Pipes and subcommands.
+// State is the Job configuration. Callers provide the first State instance, and
+// as a Job executes it creates new State instances derived from the original,
+// e.g. for Pipes and subcommands.
 type State struct {
 	Stdin  io.Reader
 	Stdout io.Writer
@@ -53,9 +40,9 @@ type State struct {
 	DryRun bool
 }
 
-// New creates a State instance using current process Stdin, Stdout, and Stderr.
+// New creates a State instance using the current process Stdin, Stdout, and Stderr.
 // As well, the returned State includes the current process working directory
-// and environment.
+// and environment, with dry run disabled.
 func New() *State {
 	d, _ := os.Getwd()
 	s := &State{
@@ -83,9 +70,9 @@ func (s *State) SetDir(dir string) string {
 	return prev
 }
 
-// Path returns the provided path relative to the state's current directory. If
-// multiple arguments are provided, they're joined via filepath.Join. If path is
-// absolute, it is taken by itself.
+// Path returns the provided path relative to the State's current directory. If
+// arguments represent and absolute path, that is used. If multiple arguments
+// are provided, they're joined using filepath.Join.
 func (s *State) Path(path ...string) string {
 	if len(path) == 0 {
 		return s.Dir
@@ -99,7 +86,8 @@ func (s *State) Path(path ...string) string {
 	return filepath.Join(append([]string{s.Dir}, path...)...)
 }
 
-// SetEnv sets the named environment variable to the given value in s.
+// SetEnv sets the named variable to the given value in the State environment.
+// If the named variable is already defined it is overwritten.
 func (s *State) SetEnv(name, value string) {
 	prefix := name + "="
 	// Find and overwrite an existing value.
@@ -113,9 +101,9 @@ func (s *State) SetEnv(name, value string) {
 	s.Env = append(s.Env, prefix+value)
 }
 
-// GetEnv gets the named environment variable from s. If name is not found, the
-// empty value is returned. This is indistinguishable from a name set to the
-// empty value.
+// GetEnv gets the named environment variable from s. If name is not found, an
+// empty value is returned. An undefined variable and a variable set to the
+// empty value are indistinguishable.
 func (s *State) GetEnv(name string) string {
 	prefix := name + "="
 	for _, kv := range s.Env {
@@ -128,15 +116,15 @@ func (s *State) GetEnv(name string) string {
 
 // Job is the primary interface supported by this package.
 type Job interface {
-	// Run executes the Job using the given State. A Job implementation should
-	// terminate when the given context is cancelled.
+	// Run executes the Job using the given State. A Job should terminate when
+	// the given context is cancelled.
 	Run(ctx context.Context, s *State) error
 
 	// String returns a readable representation of the Job operation.
 	String() string
 }
 
-// Exec creates a Job to exec the given command.
+// Exec creates a Job to execute the given command with the given arguments.
 func Exec(cmd string, args ...string) Job {
 	return &execJob{
 		name: cmd,
@@ -186,7 +174,7 @@ func (f *execJob) String() string {
 	return fmt.Sprintf("%s %s", f.name, strings.Join(f.args, " "))
 }
 
-// Func creates a Job that runs the given job function. Job functions should
+// Func creates a Job that runs the given function. Job functions should
 // honor the passed context to support cancelation.
 func Func(name string, job func(ctx context.Context, s *State) error) Job {
 	return &funcJob{
@@ -225,13 +213,14 @@ func (r *readerCtx) Read(p []byte) (n int, err error) {
 }
 
 // NewReaderContext creates a context-aware io.Reader. This is helpful for
-// making otherwise unbounded IO operations context-aware, e.g. io.Copy().
+// creating custom Jobs that are context-aware when reading from otherwise
+// unbounded IO operations, e.g. io.Copy().
 func NewReaderContext(ctx context.Context, r io.Reader) io.Reader {
 	return &readerCtx{ctx: ctx, Reader: r}
 }
 
 // Read creates a Job that reads from the given reader and writes it to Job's
-// stdout. Read creates a context-aware reader from the given reader.
+// stdout. Read creates a context-aware reader from the given io.Reader.
 func Read(r io.Reader) Job {
 	return &funcJob{
 		name: fmt.Sprintf("read(%v)", r),
@@ -260,7 +249,7 @@ func ReadFile(path string) Job {
 }
 
 // Write creates a Job that reads from the Job input and writes to the given
-// writer. Write creates a context-aware reader for the Job input reader.
+// writer. Write creates a context-aware reader from the Job input.
 func Write(w io.Writer) Job {
 	return &funcJob{
 		name: fmt.Sprintf("write(%v)", w),
@@ -313,8 +302,8 @@ func SetEnv(name string, value string) Job {
 	}
 }
 
-// Script creates a Job that executes the given Jobs in sequence. If any Job
-// returns an error, execution stops.
+// Script creates a Job that executes the given Job parameters in sequence. If
+// any Job returns an error, execution stops.
 func Script(t ...Job) Job {
 	return &scriptJob{
 		Name: "# Script",
