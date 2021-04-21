@@ -1,5 +1,5 @@
-// Package shx provides shell-like jobs for Go using simple primitives while
-// preserving flexibility and control.
+// Package shx provides shell-like operations for Go using simple primitives
+// while preserving flexibility and control.
 //
 // A Job represents one or more operations. Single operations could represent
 // running a command (Exec) or reading a file (ReadFile), while multiple Jobs
