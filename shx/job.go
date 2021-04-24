@@ -115,12 +115,17 @@ func New() *State {
 }
 
 func (s *State) copy() *State {
+	// Make independent copy of environment.
+	env2 := make([]string, len(s.Env))
+	for _, v := range s.Env {
+		env2 = append(env2, v)
+	}
 	return &State{
 		Stdin:  s.Stdin,
 		Stdout: s.Stdout,
 		Stderr: s.Stderr,
 		Dir:    s.Dir,
-		Env:    s.Env,
+		Env:    env2,
 	}
 }
 

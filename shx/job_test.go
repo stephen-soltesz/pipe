@@ -443,3 +443,30 @@ func TestState(t *testing.T) {
 		}
 	})
 }
+
+func Example() {
+	sc := Script(
+		SetEnv("KEY", "ORIGINAL"),
+		Script(
+			SetEnv("KEY", "SUBSCRIPT"),
+			Exec("env"),
+		),
+		Exec("env"),
+		Func("check-env",
+			func(ctx context.Context, s *State) error {
+				if s.GetEnv("KEY") != "ORIGINAL" {
+					fmt.Println("UNEXPECTED VALUE!", s.GetEnv("KEY"))
+				}
+				return nil
+			}),
+	)
+	s := New()
+	s.Env = nil // Clear state environment.
+	err := sc.Run(context.Background(), s)
+	if err != nil {
+		fmt.Println("err:", err)
+		return
+	}
+	// Output: KEY=SUBSCRIPT
+	// KEY=ORIGINAL
+}
