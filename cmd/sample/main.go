@@ -73,7 +73,7 @@ func main() {
 	if dryrun {
 		d := &shx.Description{}
 		sc4.Describe(d)
-		fmt.Println(d.String())
+		fmt.Print(d.String())
 		return
 	}
 
