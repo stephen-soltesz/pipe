@@ -4,7 +4,9 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"io/ioutil"
 	"os"
+	"strings"
 
 	"github.com/m-lab/go/rtx"
 	"github.com/stephen-soltesz/pipe/shx"
@@ -25,24 +27,56 @@ func main() {
 	rtx.Must(err, "failed to get working directory")
 
 	s := shx.New()
-	s.SetDryRun(dryrun)
+	s.Env = []string{}
+	// s.SetDryRun(dryrun)
 	s.SetDir(wd)
-
-	sc := shx.Script(
+	sc1 := shx.Script(
 		shx.SetEnv("FOO", "TEST"),
 		shx.Exec("pwd"),
 		shx.Exec("env"),
 		shx.Pipe(
-			shx.Exec("ls"),
+			shx.System("ls -l"),
 			shx.Exec("cat"),
 			shx.WriteFile("output.log", 0777),
 		),
-		// Exec("false"),
+	)
+	sc2 := shx.Script(
+		shx.SetEnv("SECOND", "VARIABLE"),
+		shx.Exec("env"),
+		shx.Pipe(
+			shx.ReadFile("output.log"),
+			shx.Exec("tr", "a-z", "A-Z"),
+			shx.WriteFile("output2.log", 0777),
+		),
+		shx.Chdir(".."),
+		shx.Exec("pwd"),
+		shx.System("false"),
+	)
+
+	sc3 := shx.Script(
+		sc1,
+		sc2,
+	)
+	sc4 := shx.Script(
+		shx.System("echo ok"),
+		sc3,
+		shx.Func("func_to_uppercase",
+			func(ctx context.Context, s *shx.State) error {
+				b, err := ioutil.ReadFile("output.log")
+				if err != nil {
+					return err
+				}
+				s.Stdout.Write([]byte(strings.ToUpper(string(b))))
+				return nil
+			}),
+		// shx.System("false"),
 	)
 	ctx := context.Background()
-	err = sc.Run(ctx, s)
+	err = sc4.Run(ctx, s)
+	d := &shx.Description{}
+	sc4.Describe(d)
+	fmt.Println(d.String())
 	if err != nil {
 		fmt.Println(err)
 	}
-
 }
