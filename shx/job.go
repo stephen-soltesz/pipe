@@ -54,7 +54,7 @@ type Description struct {
 	desc  bytes.Buffer
 	line  int
 	pipe  bool
-	idx   int
+	first bool
 }
 
 // Line adds a new command to the output buffer. If OpenPipe() was previously
@@ -62,11 +62,11 @@ type Description struct {
 // command is formatted as a single line.
 func (d *Description) Line(cmd string) {
 	if d.pipe {
-		if d.idx > 0 {
+		if !d.first {
 			d.desc.WriteString(" | " + cmd)
 			return
 		}
-		d.idx++
+		d.first = false
 		d.desc.WriteString(cmd)
 		return
 	}
@@ -81,9 +81,9 @@ func (d *Description) OpenPipe() (closepipe func()) {
 	d.line++
 	d.desc.WriteString(fmt.Sprintf("%2d:%s", d.line, prefix(d.Depth)))
 	d.pipe = true
+	d.first = true
 	closepipe = func() {
 		d.pipe = false
-		d.idx = 0
 		d.desc.WriteString("\n")
 	}
 	return closepipe
@@ -185,37 +185,37 @@ func (s *State) GetEnv(name string) string {
 // Job is the interface for an operation. A Job controls how an operation is run
 // and represented.
 type Job interface {
-	// Run executes the Job using the given State. A Job should terminate when
-	// the given context is cancelled.
-	Run(ctx context.Context, s *State) error
-
 	// Describe produces a readable representation of the Job operation. After
 	// calling Describe, use Description.String() to report the result.
 	Describe(d *Description)
+
+	// Run executes the Job using the given State. A Job should terminate when
+	// the given context is cancelled.
+	Run(ctx context.Context, s *State) error
 }
 
 // Exec creates a Job to execute the given command with the given arguments.
-func Exec(cmd string, args ...string) Job {
-	return &execJob{
+func Exec(cmd string, args ...string) *ExecJob {
+	return &ExecJob{
 		name: cmd,
 		args: args,
 	}
 }
 
 // System is an Exec job that interprets the given cmd using "/bin/sh".
-func System(cmd string) Job {
-	return &execJob{
+func System(cmd string) *ExecJob {
+	return &ExecJob{
 		name: "/bin/sh",
 		args: []string{"-c", cmd},
 	}
 }
 
-type execJob struct {
+type ExecJob struct {
 	name string
 	args []string
 }
 
-func (f *execJob) Run(ctx context.Context, s *State) error {
+func (f *ExecJob) Run(ctx context.Context, s *State) error {
 	cmd := exec.CommandContext(ctx, f.name, f.args...)
 	cmd.Dir = s.Dir
 	cmd.Env = s.Env
@@ -232,7 +232,7 @@ func (f *execJob) Run(ctx context.Context, s *State) error {
 	return nil
 }
 
-func (f *execJob) Describe(d *Description) {
+func (f *ExecJob) Describe(d *Description) {
 	args := ""
 	if len(f.args) > 0 {
 		args = " " + strings.Join(f.args, " ")
@@ -244,23 +244,23 @@ func (f *execJob) Describe(d *Description) {
 
 // Func creates a Job that runs the given function. Job functions should honor
 // the context to support cancelation.
-func Func(name string, job func(ctx context.Context, s *State) error) Job {
-	return &funcJob{
+func Func(name string, job func(ctx context.Context, s *State) error) *FuncJob {
+	return &FuncJob{
 		name: name,
 		job:  job,
 	}
 }
 
-type funcJob struct {
+type FuncJob struct {
 	name string
 	job  func(ctx context.Context, s *State) error
 }
 
-func (f *funcJob) Run(ctx context.Context, s *State) error {
+func (f *FuncJob) Run(ctx context.Context, s *State) error {
 	return f.job(ctx, s)
 }
 
-func (f *funcJob) Describe(d *Description) {
+func (f *FuncJob) Describe(d *Description) {
 	d.Depth++
 	d.Line(f.name)
 	d.Depth--
@@ -288,7 +288,7 @@ func (r *readerCtx) Read(p []byte) (n int, err error) {
 // Read creates a Job that reads from the given reader and writes it to Job's
 // stdout. Read creates a context-aware reader from the given io.Reader.
 func Read(r io.Reader) Job {
-	return &funcJob{
+	return &FuncJob{
 		name: fmt.Sprintf("read(%v)", r),
 		job: func(ctx context.Context, s *State) error {
 			_, err := io.Copy(s.Stdout, NewReaderContext(ctx, r))
@@ -300,7 +300,7 @@ func Read(r io.Reader) Job {
 // ReadFile creates a Job that reads from the named file and writes it to the
 // Job's stdout.
 func ReadFile(path string) Job {
-	return &funcJob{
+	return &FuncJob{
 		name: fmt.Sprintf("cat < %s", path),
 		job: func(ctx context.Context, s *State) error {
 			file, err := os.Open(s.Path(path))
@@ -317,7 +317,7 @@ func ReadFile(path string) Job {
 // Write creates a Job that reads from the Job input and writes to the given
 // writer. Write creates a context-aware reader from the Job input.
 func Write(w io.Writer) Job {
-	return &funcJob{
+	return &FuncJob{
 		name: fmt.Sprintf("write(%v)", w),
 		job: func(ctx context.Context, s *State) error {
 			_, err := io.Copy(w, NewReaderContext(ctx, s.Stdin))
@@ -330,7 +330,7 @@ func Write(w io.Writer) Job {
 // file. The output path is created if it does not exist and is truncated if it
 // does.
 func WriteFile(path string, perm os.FileMode) Job {
-	return &funcJob{
+	return &FuncJob{
 		name: fmt.Sprintf("cat > %s", path),
 		job: func(ctx context.Context, s *State) error {
 			file, err := os.OpenFile(s.Path(path), os.O_WRONLY|os.O_CREATE|os.O_TRUNC, perm)
@@ -347,7 +347,7 @@ func WriteFile(path string, perm os.FileMode) Job {
 // Chdir creates Job that changes the Job state Dir. This does not alter the
 // process working directory.
 func Chdir(dir string) Job {
-	return &funcJob{
+	return &FuncJob{
 		name: fmt.Sprintf("cd %s", dir),
 		job: func(ctx context.Context, s *State) error {
 			s.Dir = s.Path(dir)
@@ -359,7 +359,7 @@ func Chdir(dir string) Job {
 // SetEnv creates a Job that changes to Job state Env by setting name=value.
 // SetEnv is most helpful in Script() Jobs.
 func SetEnv(name string, value string) Job {
-	return &funcJob{
+	return &FuncJob{
 		name: fmt.Sprintf("export %s=%s", name, value),
 		job: func(ctx context.Context, s *State) error {
 			s.SetEnv(name, value)
@@ -370,9 +370,8 @@ func SetEnv(name string, value string) Job {
 
 // Script creates a Job that executes the given Job parameters in sequence. If
 // any Job returns an error, execution stops.
-func Script(t ...Job) Job {
-	return &scriptJob{
-		Name: "# Script",
+func Script(t ...Job) *ScriptJob {
+	return &ScriptJob{
 		Jobs: t,
 	}
 }
@@ -380,12 +379,11 @@ func Script(t ...Job) Job {
 // ErrScriptError is a base Script error.
 var ErrScriptError = errors.New("script execution error")
 
-type scriptJob struct {
-	Name string
+type ScriptJob struct {
 	Jobs []Job
 }
 
-func (c *scriptJob) Run(ctx context.Context, s *State) error {
+func (c *ScriptJob) Run(ctx context.Context, s *State) error {
 	z := s.copy()
 	for i := range c.Jobs {
 		err := c.Jobs[i].Run(ctx, z)
@@ -404,7 +402,7 @@ func (c *scriptJob) Run(ctx context.Context, s *State) error {
 	return nil
 }
 
-func (c *scriptJob) Describe(d *Description) {
+func (c *ScriptJob) Describe(d *Description) {
 	d.Depth++
 	d.Line("(")
 	for i := range c.Jobs {
@@ -417,19 +415,17 @@ func (c *scriptJob) Describe(d *Description) {
 // Pipe creates a Job that executes the given Jobs as a "shell pipeline",
 // passing the output of the first to the input of the next, and so on.
 // If any Job returns an error, the first error is returned.
-func Pipe(t ...Job) Job {
-	return &pipeJob{
-		Name: "# Pipeline",
+func Pipe(t ...Job) *PipeJob {
+	return &PipeJob{
 		Jobs: t,
 	}
 }
 
-type pipeJob struct {
-	Name string
+type PipeJob struct {
 	Jobs []Job
 }
 
-func (c *pipeJob) Run(ctx context.Context, z *State) error {
+func (c *PipeJob) Run(ctx context.Context, z *State) error {
 	e := c.Jobs
 	p := nPipes(z.Stdin, z.Stdout, len(e))
 	s := make([]*State, len(e))
@@ -487,6 +483,16 @@ func (c *pipeJob) Run(ctx context.Context, z *State) error {
 	return nil
 }
 
+func (c *PipeJob) Describe(d *Description) {
+	d.Depth++
+	closePipe := d.OpenPipe()
+	defer closePipe()
+	for i := range c.Jobs {
+		c.Jobs[i].Describe(d)
+	}
+	d.Depth--
+}
+
 func closeWriter(w io.Writer) error {
 	c, ok := w.(io.WriteCloser)
 	if ok {
@@ -503,16 +509,6 @@ func closeReader(r io.Reader) error {
 	}
 	// Not a read closer, so cannot be closed.
 	return nil
-}
-
-func (c *pipeJob) Describe(d *Description) {
-	d.Depth++
-	closePipe := d.OpenPipe()
-	defer closePipe()
-	for i := range c.Jobs {
-		c.Jobs[i].Describe(d)
-	}
-	d.Depth--
 }
 
 type rw struct {
