@@ -20,6 +20,164 @@ func init() {
 	log.SetFlags(log.LUTC | log.Llongfile)
 }
 
+func TestDescription(t *testing.T) {
+	tests := []struct {
+		name  string
+		lines []string
+		cmds  []string
+		want  string
+	}{
+		{
+			name:  "success-script",
+			lines: []string{"env", "pwd"},
+			want:  " 1: env\n 2: pwd\n",
+		},
+		{
+			name: "success-pipe",
+			cmds: []string{"env", "cat"},
+			want: " 1: env | cat\n",
+		},
+		{
+			name:  "success-script-pipe",
+			lines: []string{"env", "pwd"},
+			cmds:  []string{"env", "cat"},
+			want:  " 1: env\n 2: pwd\n 3: env | cat\n",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			d := &Description{}
+			for _, line := range tt.lines {
+				d.Line(line)
+			}
+			closepipe := d.OpenPipe()
+			for _, cmd := range tt.cmds {
+				d.Line(cmd)
+			}
+			closepipe()
+			v := d.String()
+			if v != tt.want {
+				t.Errorf("Description: wrong result; got %q, want %q", v, tt.want)
+			}
+		})
+	}
+}
+
+func TestExec(t *testing.T) {
+	tests := []struct {
+		name    string
+		cmd     string
+		args    []string
+		want    string
+		wantErr bool
+	}{
+		{
+			name: "success",
+			cmd:  "/bin/echo",
+			args: []string{"a", "b"},
+			want: "a b\n",
+		},
+		{
+			name:    "error-no-such-command",
+			cmd:     "/not-a-dir/not-a-real-command",
+			wantErr: true,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			job := Exec(tt.cmd, tt.args...)
+			ctx := context.Background()
+			b := bytes.NewBuffer(nil)
+			s := &State{
+				Stdout: b,
+			}
+			err := job.Run(ctx, s)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("Exec() = %v, want %t", err, tt.wantErr)
+			}
+			if b.String() != tt.want {
+				t.Errorf("Exec() = got %v, want %v", b.String(), tt.want)
+			}
+		})
+	}
+}
+
+func ExampleExec() {
+	ex := Exec("echo", "a", "b")
+	s := &State{
+		Stdout: os.Stdout,
+	}
+	ctx := context.Background()
+	err := ex.Run(ctx, s)
+	if err != nil {
+		panic(err)
+	}
+	// Output: a b
+}
+
+func ExampleSystem() {
+	sys := System("echo a b")
+	s := &State{
+		Stdout: os.Stdout,
+	}
+	ctx := context.Background()
+	err := sys.Run(ctx, s)
+	if err != nil {
+		panic(err)
+	}
+	// Output: a b
+}
+
+func TestFunc(t *testing.T) {
+	count := 0
+	tests := []struct {
+		name string
+		job  func(ctx context.Context, s *State) error
+	}{
+		{
+			name: "success",
+			job:  func(ctx context.Context, s *State) error { count++; return nil },
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			f := Func(tt.name, tt.job)
+			ctx := context.Background()
+			s := &State{
+				Stdout: os.Stdout,
+			}
+			err := f.Run(ctx, s)
+			if err != nil {
+				t.Errorf("Func() failed; got %v, want nil", err)
+			}
+		})
+	}
+	if count != 1 {
+		t.Errorf("Func() count incorrect; got %d, want 1", count)
+	}
+}
+
+func ExampleFunc() {
+	f := Func("example", func(ctx context.Context, s *State) error {
+		b, err := ioutil.ReadAll(s.Stdin)
+		if err != nil {
+			return err
+		}
+		_, err = s.Stdout.Write([]byte(base64.URLEncoding.EncodeToString(b)))
+		return err
+	})
+	s := &State{
+		Stdin:  bytes.NewBuffer([]byte(`{"key":"value"}\n`)),
+		Stdout: os.Stdout,
+	}
+	ctx := context.Background()
+	err := f.Run(ctx, s)
+	if err != nil {
+		panic(err)
+	}
+	// Output: eyJrZXkiOiJ2YWx1ZSJ9XG4=
+}
+
 func TestScript(t *testing.T) {
 	tmpdir := t.TempDir()
 
@@ -108,28 +266,6 @@ func ExampleScript() {
 	//  4: )
 }
 
-func ExamplePipe() {
-	p := Pipe(
-		Exec("ls"),
-		Exec("tail", "-1"),
-		Exec("wc", "-l"),
-	)
-	s := &State{
-		Stdout: os.Stdout,
-	}
-	ctx := context.Background()
-	err := p.Run(ctx, s)
-	if err != nil {
-		panic(err)
-	}
-	d := &Description{}
-	p.Describe(d)
-	fmt.Println(d.String())
-	// Output: 1
-	//  1: ls | tail -1 | wc -l
-
-}
-
 func TestPipe(t *testing.T) {
 	tmpdir := t.TempDir()
 
@@ -188,6 +324,28 @@ func TestPipe(t *testing.T) {
 			}
 		})
 	}
+}
+
+func ExamplePipe() {
+	p := Pipe(
+		Exec("ls"),
+		Exec("tail", "-1"),
+		Exec("wc", "-l"),
+	)
+	s := &State{
+		Stdout: os.Stdout,
+	}
+	ctx := context.Background()
+	err := p.Run(ctx, s)
+	if err != nil {
+		panic(err)
+	}
+	d := &Description{}
+	p.Describe(d)
+	fmt.Println(d.String())
+	// Output: 1
+	//  1: ls | tail -1 | wc -l
+
 }
 
 func TestReadWrite(t *testing.T) {
@@ -284,162 +442,4 @@ func TestState(t *testing.T) {
 			t.Errorf("Path() wrong value; got %q, want %q", p, "/relative/path")
 		}
 	})
-}
-
-func ExampleExec() {
-	ex := Exec("echo", "a", "b")
-	s := &State{
-		Stdout: os.Stdout,
-	}
-	ctx := context.Background()
-	err := ex.Run(ctx, s)
-	if err != nil {
-		panic(err)
-	}
-	// Output: a b
-}
-
-func ExampleSystem() {
-	sys := System("echo a b")
-	s := &State{
-		Stdout: os.Stdout,
-	}
-	ctx := context.Background()
-	err := sys.Run(ctx, s)
-	if err != nil {
-		panic(err)
-	}
-	// Output: a b
-}
-
-func ExampleFunc() {
-	f := Func("example", func(ctx context.Context, s *State) error {
-		b, err := ioutil.ReadAll(s.Stdin)
-		if err != nil {
-			return err
-		}
-		_, err = s.Stdout.Write([]byte(base64.URLEncoding.EncodeToString(b)))
-		return err
-	})
-	s := &State{
-		Stdin:  bytes.NewBuffer([]byte(`{"key":"value"}\n`)),
-		Stdout: os.Stdout,
-	}
-	ctx := context.Background()
-	err := f.Run(ctx, s)
-	if err != nil {
-		panic(err)
-	}
-	// Output: eyJrZXkiOiJ2YWx1ZSJ9XG4=
-}
-
-func TestExec(t *testing.T) {
-	tests := []struct {
-		name    string
-		cmd     string
-		args    []string
-		want    string
-		wantErr bool
-	}{
-		{
-			name: "success",
-			cmd:  "/bin/echo",
-			args: []string{"a", "b"},
-			want: "a b\n",
-		},
-		{
-			name:    "error-no-such-command",
-			cmd:     "/not-a-dir/not-a-real-command",
-			wantErr: true,
-		},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			job := Exec(tt.cmd, tt.args...)
-			ctx := context.Background()
-			b := bytes.NewBuffer(nil)
-			s := &State{
-				Stdout: b,
-			}
-			err := job.Run(ctx, s)
-			if (err != nil) != tt.wantErr {
-				t.Errorf("Exec() = %v, want %t", err, tt.wantErr)
-			}
-			if b.String() != tt.want {
-				t.Errorf("Exec() = got %v, want %v", b.String(), tt.want)
-			}
-		})
-	}
-}
-
-func TestFunc(t *testing.T) {
-	count := 0
-	tests := []struct {
-		name string
-		job  func(ctx context.Context, s *State) error
-	}{
-		{
-			name: "success",
-			job:  func(ctx context.Context, s *State) error { count++; return nil },
-		},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			f := Func(tt.name, tt.job)
-			ctx := context.Background()
-			s := &State{
-				Stdout: os.Stdout,
-			}
-			err := f.Run(ctx, s)
-			if err != nil {
-				t.Errorf("Func() failed; got %v, want nil", err)
-			}
-		})
-	}
-	if count != 1 {
-		t.Errorf("Func() count incorrect; got %d, want 1", count)
-	}
-}
-
-func TestDescription(t *testing.T) {
-	tests := []struct {
-		name  string
-		lines []string
-		cmds  []string
-		want  string
-	}{
-		{
-			name:  "success-script",
-			lines: []string{"env", "pwd"},
-			want:  " 1: env\n 2: pwd\n",
-		},
-		{
-			name: "success-pipe",
-			cmds: []string{"env", "cat"},
-			want: " 1: env | cat\n",
-		},
-		{
-			name:  "success-script-pipe",
-			lines: []string{"env", "pwd"},
-			cmds:  []string{"env", "cat"},
-			want:  " 1: env\n 2: pwd\n 3: env | cat\n",
-		},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			d := &Description{}
-			for _, line := range tt.lines {
-				d.Line(line)
-			}
-			closepipe := d.OpenPipe()
-			for _, cmd := range tt.cmds {
-				d.Line(cmd)
-			}
-			closepipe()
-			v := d.String()
-			if v != tt.want {
-				t.Errorf("Description: wrong result; got %q, want %q", v, tt.want)
-			}
-		})
-	}
 }
