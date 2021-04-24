@@ -50,7 +50,7 @@ func TestDescription(t *testing.T) {
 			for _, line := range tt.lines {
 				d.Line(line)
 			}
-			closepipe := d.OpenPipe()
+			closepipe := d.OpenPipe(" | ")
 			for _, cmd := range tt.cmds {
 				d.Line(cmd)
 			}
@@ -459,6 +459,8 @@ func Example() {
 				}
 				return nil
 			}),
+		SetEnvFromJob("KEY", System("basename $( pwd )")),
+		Exec("env"),
 	)
 	s := New()
 	s.Env = nil // Clear state environment.
@@ -467,6 +469,9 @@ func Example() {
 		fmt.Println("err:", err)
 		return
 	}
+	d := &Description{}
+	sc.Describe(d)
+	fmt.Println(d.String())
 	// Output: KEY=SUBSCRIPT
 	// KEY=ORIGINAL
 }
