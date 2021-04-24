@@ -50,11 +50,11 @@ func TestDescription(t *testing.T) {
 			for _, line := range tt.lines {
 				d.Line(line)
 			}
-			closepipe := d.OpenPipe(" | ")
+			closepipe := d.OpenRight(" | ")
 			for _, cmd := range tt.cmds {
 				d.Line(cmd)
 			}
-			closepipe()
+			closepipe("")
 			v := d.String()
 			if v != tt.want {
 				t.Errorf("Description: wrong result; got %q, want %q", v, tt.want)
@@ -469,9 +469,71 @@ func Example() {
 		fmt.Println("err:", err)
 		return
 	}
-	d := &Description{}
-	sc.Describe(d)
-	fmt.Println(d.String())
 	// Output: KEY=SUBSCRIPT
 	// KEY=ORIGINAL
+	// KEY=shx
+}
+
+func TestSetEnvFromJob_Run(t *testing.T) {
+	tests := []struct {
+		name    string
+		job     Job
+		want    string
+		wantErr bool
+	}{
+		{
+			name: "success",
+			job:  System("echo a"),
+			want: "success=a",
+		},
+		{
+			name:    "error",
+			job:     System("exit 1"),
+			wantErr: true,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			j := SetEnvFromJob(tt.name, tt.job)
+			s := &State{}
+			ctx := context.Background()
+			err := j.Run(ctx, s)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("SetEnvFromJob() error = got %v, want nil", err)
+			}
+			if len(s.Env) > 0 && s.Env[0] != tt.want {
+				t.Errorf("SetEnvFromJob() wrong Env; got %q, want %q", s.Env[0], tt.want)
+			}
+		})
+	}
+}
+
+func TestSetEnvFromJob_Describe(t *testing.T) {
+	tests := []struct {
+		name string
+		job  Job
+		want string
+	}{
+		{
+			name: "success",
+			job:  System("echo a"),
+			want: " 1: export success=$(/bin/sh -c echo a)\n",
+		},
+		{
+			name: "error",
+			job:  System("exit 1"),
+			want: " 1: export error=$(/bin/sh -c exit 1)\n",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			j := SetEnvFromJob(tt.name, tt.job)
+			d := &Description{}
+			j.Describe(d)
+			s := d.String()
+			if s != tt.want {
+				t.Errorf("SetEnvFromJob() description; got %q, want %q", s, tt.want)
+			}
+		})
+	}
 }
