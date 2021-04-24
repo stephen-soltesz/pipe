@@ -28,7 +28,6 @@ func main() {
 
 	s := shx.New()
 	s.Env = []string{}
-	// s.SetDryRun(dryrun)
 	s.SetDir(wd)
 	sc1 := shx.Script(
 		shx.SetEnv("FOO", "TEST"),
@@ -71,11 +70,15 @@ func main() {
 			}),
 		// shx.System("false"),
 	)
+	if dryrun {
+		d := &shx.Description{}
+		sc4.Describe(d)
+		fmt.Println(d.String())
+		return
+	}
+
 	ctx := context.Background()
 	err = sc4.Run(ctx, s)
-	d := &shx.Description{}
-	sc4.Describe(d)
-	fmt.Println(d.String())
 	if err != nil {
 		fmt.Println(err)
 	}
