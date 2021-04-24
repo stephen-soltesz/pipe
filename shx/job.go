@@ -1,17 +1,18 @@
 // Package shx provides shell-like operations for Go.
 //
 // A Job represents one or more operations. A single-operation Job may represent
-// running a command (Exec, System) or reading or writing a file (ReadFile,
-// WriteFile), or a custom function (Func). A multiple-operation Job combines
-// several single operation jobs (Script) or pipeline (Pipe). Together, these
-// allow the composition of more and more complex operations.
+// running a command (Exec, System), or reading or writing a file (ReadFile,
+// WriteFile), or a user defined operation (Func). A multiple-operation Job runs
+// several single operation jobs in a sequence (Script) or pipeline (Pipe).
+// Taken together, these primitive types allow the composition of more and more
+// complex operations.
 //
-// When a Job runs, it uses State to control its input and output, as well as
-// its working directory, environment.
+// Users control how a Job runs using the State. State controls the Job input
+// and output, as well as its working directory and environment.
 //
-// A Job Description is a human-readable representation using shell-like syntax.
-// Because some operations have no shell equivalent, the result is only
-// representative.
+// Users may produce a human-readable representation of a complex Job in a
+// shell-like syntax using the Description. Because some operations have no
+// shell equivalent, the result is only representative.
 //
 // Examples are provided for all primitive Job types: Exec, System, Func, Pipe,
 // Script. Additional convenience Jobs make creating more complex operations a
@@ -43,9 +44,12 @@ type State struct {
 	Env    []string
 }
 
-// Description is used to produce a representation of a Job. After collecting a
-// description, serialize using the String() method.
+// Description is used to produce a representation of a Job. Custom Job types
+// should use the Description interface to represent their behavior in a
+// helpful, human-readable form. After collecting a description, serialize using
+// the String() method.
 type Description struct {
+	// Depth is used to control line prefix indentation in complex Jobs.
 	Depth int
 	desc  bytes.Buffer
 	line  int
@@ -53,9 +57,9 @@ type Description struct {
 	idx   int
 }
 
-// Line adds a new line to the output buffer. If StartPipe() was previously
+// Line adds a new command to the output buffer. If OpenPipe() was previously
 // called, then the command is formatted as part of a pipeline. Otherwise, the
-// command is formatted as a stand alone line.
+// command is formatted as a single line.
 func (d *Description) Line(cmd string) {
 	if d.pipe {
 		if d.idx > 0 {
@@ -67,28 +71,30 @@ func (d *Description) Line(cmd string) {
 		return
 	}
 	d.line++
-	d.desc.WriteString(fmt.Sprintf("%2d: %s%s\n", d.line, prefix(d.Depth), cmd))
+	d.desc.WriteString(fmt.Sprintf("%2d:%s%s\n", d.line, prefix(d.Depth), cmd))
 }
 
-// StartPipe begins a line of a command pipeline. Calls to StartPipe() should be
-// paired with EndPipe().
-func (d *Description) StartPipe() {
+// OpenPipe begins formatting a command pipeline. Subsequent calls to Line() add
+// commands to the pipeline. OpenPipe() returns a function that completes the
+// pipeline formatting.
+func (d *Description) OpenPipe() (closepipe func()) {
 	d.line++
-	d.desc.WriteString(fmt.Sprintf("%2d: %s", d.line, prefix(d.Depth)))
+	d.desc.WriteString(fmt.Sprintf("%2d:%s", d.line, prefix(d.Depth)))
 	d.pipe = true
+	closepipe = func() {
+		d.pipe = false
+		d.idx = 0
+		d.desc.WriteString("\n")
+	}
+	return closepipe
 }
 
-// EndPipe concludes a command pipeline. Calls to EndPipe() should be preceeded
-// by a call to StartPipe().
-func (d *Description) EndPipe() {
-	d.pipe = false
-	d.idx = 0
-	d.desc.WriteString("\n")
-}
-
-// String
+// String serializes a description produced by running Job.Describe(). Calling
+// String() resets the Description buffer.
 func (d *Description) String() string {
-	return d.desc.String()
+	s := d.desc.String()
+	d.desc.Reset()
+	return s
 }
 
 // New creates a State instance based on the current process state, using
@@ -371,8 +377,8 @@ func Script(t ...Job) Job {
 	}
 }
 
-// ErrScriptExecError is the base error for Script errors.
-var ErrScriptExecError = errors.New("script execution error")
+// ErrScriptError is a base Script error.
+var ErrScriptError = errors.New("script execution error")
 
 type scriptJob struct {
 	Name string
@@ -384,11 +390,11 @@ func (c *scriptJob) Run(ctx context.Context, s *State) error {
 	for i := range c.Jobs {
 		err := c.Jobs[i].Run(ctx, z)
 		// Special handling for script errors.
-		if err != nil && !errors.Is(err, ErrScriptExecError) {
+		if err != nil && !errors.Is(err, ErrScriptError) {
 			d := &Description{}
 			c.Describe(d)
 			str := d.String()
-			return fmt.Errorf("%w:\n%s - %s", ErrScriptExecError, str, err.Error())
+			return fmt.Errorf("%w:\n%s - %s", ErrScriptError, str, err.Error())
 		}
 		// All other errors.
 		if err != nil {
@@ -501,11 +507,11 @@ func closeReader(r io.Reader) error {
 
 func (c *pipeJob) Describe(d *Description) {
 	d.Depth++
-	d.StartPipe()
+	closePipe := d.OpenPipe()
+	defer closePipe()
 	for i := range c.Jobs {
 		c.Jobs[i].Describe(d)
 	}
-	d.EndPipe()
 	d.Depth--
 }
 
