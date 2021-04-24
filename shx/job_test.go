@@ -102,10 +102,10 @@ func ExampleScript() {
 	sc.Describe(d)
 	fmt.Println(d.String())
 	// Output: FOO=BAR
-	//  1:   (
-	//  2:     export FOO=BAR
-	//  3:     env
-	//  4:   )
+	//  1: (
+	//  2:   export FOO=BAR
+	//  3:   env
+	//  4: )
 }
 
 func ExamplePipe() {
@@ -126,7 +126,7 @@ func ExamplePipe() {
 	p.Describe(d)
 	fmt.Println(d.String())
 	// Output: 1
-	//  1:   ls | tail -1 | wc -l
+	//  1: ls | tail -1 | wc -l
 
 }
 
@@ -398,5 +398,48 @@ func TestFunc(t *testing.T) {
 	}
 	if count != 1 {
 		t.Errorf("Func() count incorrect; got %d, want 1", count)
+	}
+}
+
+func TestDescription(t *testing.T) {
+	tests := []struct {
+		name  string
+		lines []string
+		cmds  []string
+		want  string
+	}{
+		{
+			name:  "success-script",
+			lines: []string{"env", "pwd"},
+			want:  " 1: env\n 2: pwd\n",
+		},
+		{
+			name: "success-pipe",
+			cmds: []string{"env", "cat"},
+			want: " 1: env | cat\n",
+		},
+		{
+			name:  "success-script-pipe",
+			lines: []string{"env", "pwd"},
+			cmds:  []string{"env", "cat"},
+			want:  " 1: env\n 2: pwd\n 3: env | cat\n",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			d := &Description{}
+			for _, line := range tt.lines {
+				d.Line(line)
+			}
+			closepipe := d.OpenPipe()
+			for _, cmd := range tt.cmds {
+				d.Line(cmd)
+			}
+			closepipe()
+			v := d.String()
+			if v != tt.want {
+				t.Errorf("Description: wrong result; got %q, want %q", v, tt.want)
+			}
+		})
 	}
 }

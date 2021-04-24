@@ -54,7 +54,7 @@ type Description struct {
 	desc  bytes.Buffer
 	line  int
 	pipe  bool
-	first bool
+	idx   int
 }
 
 // Line adds a new command to the output buffer. If OpenPipe() was previously
@@ -62,16 +62,16 @@ type Description struct {
 // command is formatted as a single line.
 func (d *Description) Line(cmd string) {
 	if d.pipe {
-		if !d.first {
+		d.idx++
+		if d.idx > 1 {
 			d.desc.WriteString(" | " + cmd)
 			return
 		}
-		d.first = false
-		d.desc.WriteString(cmd)
+		d.desc.WriteString(fmt.Sprintf("%2d: %s%s", d.line, prefix(d.Depth), cmd))
 		return
 	}
 	d.line++
-	d.desc.WriteString(fmt.Sprintf("%2d:%s%s\n", d.line, prefix(d.Depth), cmd))
+	d.desc.WriteString(fmt.Sprintf("%2d: %s%s\n", d.line, prefix(d.Depth), cmd))
 }
 
 // OpenPipe begins formatting a command pipeline. Subsequent calls to Line() add
@@ -79,12 +79,14 @@ func (d *Description) Line(cmd string) {
 // pipeline formatting.
 func (d *Description) OpenPipe() (closepipe func()) {
 	d.line++
-	d.desc.WriteString(fmt.Sprintf("%2d:%s", d.line, prefix(d.Depth)))
 	d.pipe = true
-	d.first = true
+	d.idx = 0
 	closepipe = func() {
 		d.pipe = false
-		d.desc.WriteString("\n")
+		// Verify that some commands were printed before adding extra newline.
+		if d.idx > 0 {
+			d.desc.WriteString("\n")
+		}
 	}
 	return closepipe
 }
@@ -237,9 +239,7 @@ func (f *ExecJob) Describe(d *Description) {
 	if len(f.args) > 0 {
 		args = " " + strings.Join(f.args, " ")
 	}
-	d.Depth++
 	d.Line(f.name + args)
-	d.Depth--
 }
 
 // Func creates a Job that runs the given function. Job functions should honor
@@ -261,9 +261,7 @@ func (f *FuncJob) Run(ctx context.Context, s *State) error {
 }
 
 func (f *FuncJob) Describe(d *Description) {
-	d.Depth++
 	d.Line(f.name)
-	d.Depth--
 }
 
 // NewReaderContext creates a context-aware io.Reader. This is helpful for
@@ -403,13 +401,13 @@ func (c *ScriptJob) Run(ctx context.Context, s *State) error {
 }
 
 func (c *ScriptJob) Describe(d *Description) {
-	d.Depth++
 	d.Line("(")
+	d.Depth++
 	for i := range c.Jobs {
 		c.Jobs[i].Describe(d)
 	}
-	d.Line(")")
 	d.Depth--
+	d.Line(")")
 }
 
 // Pipe creates a Job that executes the given Jobs as a "shell pipeline",
@@ -484,13 +482,11 @@ func (c *PipeJob) Run(ctx context.Context, z *State) error {
 }
 
 func (c *PipeJob) Describe(d *Description) {
-	d.Depth++
 	closePipe := d.OpenPipe()
 	defer closePipe()
 	for i := range c.Jobs {
 		c.Jobs[i].Describe(d)
 	}
-	d.Depth--
 }
 
 func closeWriter(w io.Writer) error {
