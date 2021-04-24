@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/base64"
+	"fmt"
 	"io/ioutil"
 	"log"
 	"os"
@@ -25,7 +26,6 @@ func TestScript(t *testing.T) {
 	tests := []struct {
 		name    string
 		t       []Job
-		dryrun  bool
 		want    string
 		wantErr bool
 	}{
@@ -50,12 +50,20 @@ func TestScript(t *testing.T) {
 			wantErr: true,
 		},
 		{
-			name: "success-dryrun",
+			name: "stop-after-deep-error",
 			t: []Job{
-				Chdir(tmpdir),
-				System("pwd"),
+				// Force an error within a sub-Script.
+				Script(
+					[]Job{
+						System("exit 1"),
+					}...,
+				),
+				Func("test-failure", func(ctx context.Context, s *State) error {
+					t.Fatalf("script should not continue executing after error.")
+					return nil
+				}),
 			},
-			dryrun: true,
+			wantErr: true,
 		},
 	}
 	for _, tt := range tests {
@@ -64,7 +72,6 @@ func TestScript(t *testing.T) {
 			b := bytes.NewBuffer(nil)
 			s := &State{
 				Stdout: b,
-				DryRun: tt.dryrun,
 			}
 			sc := Script(tt.t...)
 			err := sc.Run(ctx, s)
@@ -91,8 +98,14 @@ func ExampleScript() {
 	if err != nil {
 		panic(err)
 	}
+	d := &Description{}
+	sc.Describe(d)
+	fmt.Println(d.String())
 	// Output: FOO=BAR
-
+	//  1:   (
+	//  2:     export FOO=BAR
+	//  3:     env
+	//  4:   )
 }
 
 func ExamplePipe() {
@@ -109,7 +122,11 @@ func ExamplePipe() {
 	if err != nil {
 		panic(err)
 	}
+	d := &Description{}
+	p.Describe(d)
+	fmt.Println(d.String())
 	// Output: 1
+	//  1:   ls | tail -1 | wc -l
 
 }
 
@@ -120,7 +137,6 @@ func TestPipe(t *testing.T) {
 		name    string
 		t       []Job
 		z       *State
-		dryrun  bool
 		want    string
 		wantErr bool
 	}{
@@ -132,18 +148,6 @@ func TestPipe(t *testing.T) {
 				WriteFile("output.log", 0666),
 			},
 			want: tmpdir + "\n",
-		},
-		{
-			name: "success-dryrun",
-			t: []Job{
-				System("pwd"),
-				System("cat"),
-				Func("test-function", func(ctx context.Context, s *State) error {
-					// Does nothing.
-					return nil
-				}),
-			},
-			dryrun: true,
 		},
 		{
 			name: "success-readcloser-writecloser",
@@ -168,7 +172,6 @@ func TestPipe(t *testing.T) {
 			c := Pipe(tt.t...)
 			ctx := context.Background()
 			s := New()
-			s.DryRun = tt.dryrun
 			s.Dir = tmpdir
 			if err := c.Run(ctx, s); (err != nil) != tt.wantErr {
 				t.Errorf("pipeJob.Run() error = %v, wantErr %v", err, tt.wantErr)
@@ -256,10 +259,6 @@ func TestState(t *testing.T) {
 		if p := s.SetDir("/"); p != origDir {
 			t.Errorf("SetDir() wrong previous value; got %q, want %q", p, origDir)
 		}
-		origDR := s.DryRun
-		if p := s.SetDryRun(true); p != false {
-			t.Errorf("SetDryRun() wrong previous value; got %t, want %t", p, origDR)
-		}
 		s.SetEnv("FOO", "BAR")
 		if p := s.GetEnv("FOO"); p != "BAR" {
 			t.Errorf("SetEnv() found wrong value; got %q, want %q", p, "BAR")
@@ -341,20 +340,12 @@ func TestExec(t *testing.T) {
 		args    []string
 		want    string
 		wantErr bool
-		dryRun  bool
 	}{
 		{
 			name: "success",
 			cmd:  "/bin/echo",
 			args: []string{"a", "b"},
 			want: "a b\n",
-		},
-		{
-			name:   "success-dryrun",
-			cmd:    "/bin/echo",
-			args:   []string{"a", "b"},
-			want:   "",
-			dryRun: true,
 		},
 		{
 			name:    "error-no-such-command",
@@ -369,7 +360,6 @@ func TestExec(t *testing.T) {
 			b := bytes.NewBuffer(nil)
 			s := &State{
 				Stdout: b,
-				DryRun: tt.dryRun,
 			}
 			err := job.Run(ctx, s)
 			if (err != nil) != tt.wantErr {
@@ -385,18 +375,12 @@ func TestExec(t *testing.T) {
 func TestFunc(t *testing.T) {
 	count := 0
 	tests := []struct {
-		name   string
-		job    func(ctx context.Context, s *State) error
-		dryrun bool
+		name string
+		job  func(ctx context.Context, s *State) error
 	}{
 		{
 			name: "success",
 			job:  func(ctx context.Context, s *State) error { count++; return nil },
-		},
-		{
-			name:   "success-dryrun",
-			job:    func(ctx context.Context, s *State) error { count++; return nil },
-			dryrun: true,
 		},
 	}
 	for _, tt := range tests {
@@ -405,7 +389,6 @@ func TestFunc(t *testing.T) {
 			ctx := context.Background()
 			s := &State{
 				Stdout: os.Stdout,
-				DryRun: tt.dryrun,
 			}
 			err := f.Run(ctx, s)
 			if err != nil {
