@@ -50,11 +50,11 @@ func TestDescription(t *testing.T) {
 			for _, line := range tt.lines {
 				d.Line(line)
 			}
-			closepipe := d.OpenRight(" | ")
+			endlist := d.StartList("", " | ")
 			for _, cmd := range tt.cmds {
 				d.Line(cmd)
 			}
-			closepipe("")
+			endlist("")
 			v := d.String()
 			if v != tt.want {
 				t.Errorf("Description: wrong result; got %q, want %q", v, tt.want)

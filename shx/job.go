@@ -55,10 +55,11 @@ type Description struct {
 	line  int
 	pipe  bool
 	idx   int
+	start string
 	sep   string
 }
 
-// Line adds a new command to the output buffer. If OpenRight() was previously
+// Line adds a new command to the output buffer. If StartList() was previously
 // called, then the command is appended as a continuation of a single line.
 // Otherwise, the command is formatted as a single line.
 func (d *Description) Line(cmd string) {
@@ -68,32 +69,33 @@ func (d *Description) Line(cmd string) {
 			d.desc.WriteString(d.sep + cmd)
 			return
 		}
-		d.desc.WriteString(fmt.Sprintf("%2d: %s%s", d.line, prefix(d.Depth), cmd))
+		d.desc.WriteString(fmt.Sprintf("%2d: %s%s%s", d.line, prefix(d.Depth), d.start, cmd))
 		return
 	}
 	d.line++
 	d.desc.WriteString(fmt.Sprintf("%2d: %s%s\n", d.line, prefix(d.Depth), cmd))
 }
 
-// OpenRight begins formatting a multi-part expression on a single line.
-// OpenRight may help format a list, a pipeline, or similar expression.
+// StartList begins formatting a multi-part expression on a single line.
+// StartList may help format a list, a pipeline, or similar expression.
 // Subsequent calls to Line() add commands to the end of the current line,
-// prefixed by "sep". OpenRight() returns a closeright function that terminates
-// the line and resets the default behavior of Line() until OpenRight is called
+// prefixed by "sep". StartList() returns a endlist function that terminates
+// the line and resets the default behavior of Line() until StartList is called
 // again.
-func (d *Description) OpenRight(sep string) (closeright func(end string)) {
+func (d *Description) StartList(start, sep string) (endlist func(end string)) {
 	d.line++
 	d.pipe = true
 	d.idx = 0
 	d.sep = sep
-	closeright = func(end string) {
+	d.start = start
+	endlist = func(end string) {
 		d.pipe = false
 		// Verify that some commands were printed before adding extra newline.
 		if d.idx > 0 {
 			d.desc.WriteString(end + "\n")
 		}
 	}
-	return closeright
+	return endlist
 }
 
 // String serializes a description produced by running Job.Describe(). Calling
@@ -415,7 +417,7 @@ func SetEnvFromJob(name string, job Job) Job {
 			return nil
 		},
 		Desc: func(d *Description) {
-			cp := d.OpenRight("")
+			cp := d.StartList("", "")
 			d.Line(fmt.Sprintf("export %s=$(", name))
 			job.Describe(d)
 			d.Line(")")
@@ -551,8 +553,8 @@ func (c *PipeJob) Run(ctx context.Context, z *State) error {
 
 // Describe generates a description for all jobs in the pipeline.
 func (c *PipeJob) Describe(d *Description) {
-	closePipe := d.OpenRight(" | ")
-	defer closePipe("")
+	endlist := d.StartList("", " | ")
+	defer endlist("")
 	for i := range c.Jobs {
 		c.Jobs[i].Describe(d)
 	}
