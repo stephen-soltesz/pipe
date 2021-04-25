@@ -7,8 +7,8 @@
 // Taken together, these primitive types allow the composition of more and more
 // complex operations.
 //
-// Users control how a Job runs using the State. State controls the Job input
-// and output, as well as its working directory and environment.
+// Users control how a Job runs using State. State controls the Job input and
+// output, as well as its working directory and environment.
 //
 // Users may produce a human-readable representation of a complex Job in a
 // shell-like syntax using the Description. Because some operations have no
@@ -59,7 +59,7 @@ type Description struct {
 	sep   string
 }
 
-// Line adds a new command to the output buffer. If StartList() was previously
+// Line adds a new command to the output buffer. If StartList was previously
 // called, then the command is appended as a continuation of a single line.
 // Otherwise, the command is formatted as a single line.
 func (d *Description) Line(cmd string) {
@@ -78,9 +78,9 @@ func (d *Description) Line(cmd string) {
 
 // StartList begins formatting a multi-part expression on a single line.
 // StartList may help format a list, a pipeline, or similar expression.
-// Subsequent calls to Line() add commands to the end of the current line,
-// prefixed by "sep". StartList() returns an endlist function that terminates
-// the line and resets the default behavior of Line() until StartList is called
+// Subsequent calls to Line add commands to the end of the current line,
+// prefixed by "sep". StartList returns an endlist function that terminates
+// the line and resets the default behavior of Line until StartList is called
 // again.
 func (d *Description) StartList(start, sep string) (endlist func(end string)) {
 	d.line++
@@ -99,7 +99,7 @@ func (d *Description) StartList(start, sep string) (endlist func(end string)) {
 }
 
 // String serializes a description produced by running Job.Describe(). Calling
-// String() resets the Description buffer.
+// String resets the Description buffer.
 func (d *Description) String() string {
 	s := d.desc.String()
 	d.desc.Reset()
@@ -122,18 +122,15 @@ func New() *State {
 }
 
 func (s *State) copy() *State {
-	// Make independent copy of environment.
-	env2 := make([]string, len(s.Env))
-	for _, v := range s.Env {
-		env2 = append(env2, v)
-	}
-	return &State{
+	c := &State{
 		Stdin:  s.Stdin,
 		Stdout: s.Stdout,
 		Stderr: s.Stderr,
 		Dir:    s.Dir,
-		Env:    env2,
 	}
+	// Make independent copy of environment.
+	c.Env = append(c.Env, s.Env...)
+	return c
 }
 
 func prefix(d int) string {
@@ -144,7 +141,7 @@ func prefix(d int) string {
 	return v
 }
 
-// SetDir sets the State Dir value and returns the previous value.
+// SetDir assigns the Dir value and returns the previous value.
 func (s *State) SetDir(dir string) string {
 	prev := s.Dir
 	s.Dir = dir
@@ -167,8 +164,8 @@ func (s *State) Path(path ...string) string {
 	return filepath.Join(append([]string{s.Dir}, path...)...)
 }
 
-// SetEnv sets the named variable to the given value in the State environment.
-// If the named variable is already defined it is overwritten.
+// SetEnv assigns the named variable to the given value in the State
+// environment. If the named variable is already defined it is overwritten.
 func (s *State) SetEnv(name, value string) {
 	prefix := name + "="
 	// Find and overwrite an existing value.
@@ -216,7 +213,7 @@ func Exec(cmd string, args ...string) *ExecJob {
 	}
 }
 
-// System is an Exec job that interprets the given cmd using "/bin/sh".
+// System is an Exec job that interprets the given command using "/bin/sh".
 func System(cmd string) *ExecJob {
 	return &ExecJob{
 		name: "/bin/sh",
@@ -373,8 +370,9 @@ func WriteFile(path string, perm os.FileMode) Job {
 	}
 }
 
-// Chdir creates Job that changes the Job state Dir. This does not alter the
-// process working directory.
+// Chdir creates Job that changes the State Dir to the given directory at
+// runtime. This does not alter the process working directory. Chdir is helpful
+// in Script() Jobs.
 func Chdir(dir string) Job {
 	return &FuncJob{
 		Job: func(ctx context.Context, s *State) error {
@@ -387,8 +385,8 @@ func Chdir(dir string) Job {
 	}
 }
 
-// SetEnv creates a Job that changes to Job state Env by setting name=value.
-// SetEnv is most helpful in Script() Jobs.
+// SetEnv creates a Job to assign the given name=value in the running State Env.
+// SetEnv is helpful in Script() Jobs.
 func SetEnv(name string, value string) Job {
 	return &FuncJob{
 		Job: func(ctx context.Context, s *State) error {
