@@ -79,7 +79,7 @@ func (d *Description) Line(cmd string) {
 // StartList begins formatting a multi-part expression on a single line.
 // StartList may help format a list, a pipeline, or similar expression.
 // Subsequent calls to Line() add commands to the end of the current line,
-// prefixed by "sep". StartList() returns a endlist function that terminates
+// prefixed by "sep". StartList() returns an endlist function that terminates
 // the line and resets the default behavior of Line() until StartList is called
 // again.
 func (d *Description) StartList(start, sep string) (endlist func(end string)) {

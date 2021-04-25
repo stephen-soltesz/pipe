@@ -452,13 +452,6 @@ func Example() {
 			Exec("env"),
 		),
 		Exec("env"),
-		Func("check-env",
-			func(ctx context.Context, s *State) error {
-				if s.GetEnv("KEY") != "ORIGINAL" {
-					fmt.Println("UNEXPECTED VALUE!", s.GetEnv("KEY"))
-				}
-				return nil
-			}),
 		SetEnvFromJob("KEY", System("basename $( pwd )")),
 		Exec("env"),
 	)
