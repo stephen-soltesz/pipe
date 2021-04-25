@@ -30,7 +30,7 @@ func main() {
 	s.Env = []string{}
 	s.SetDir(wd)
 	sc1 := shx.Script(
-		shx.SetEnv("FOO", "TEST"),
+		shx.SetEnv("VARIABLE", "FIRST"),
 		shx.Exec("pwd"),
 		shx.Exec("env"),
 		shx.Pipe(
@@ -40,7 +40,7 @@ func main() {
 		),
 	)
 	sc2 := shx.Script(
-		shx.SetEnv("SECOND", "VARIABLE"),
+		shx.SetEnv("VARIABLE", "SECOND"),
 		shx.Exec("env"),
 		shx.Pipe(
 			shx.ReadFile("output.log"),
@@ -49,7 +49,7 @@ func main() {
 		),
 		shx.Chdir(".."),
 		shx.Exec("pwd"),
-		shx.System("false"),
+		shx.System("false"), // this will fail.
 	)
 
 	sc3 := shx.Script(
