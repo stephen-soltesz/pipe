@@ -406,7 +406,10 @@ func SetEnvFromJob(name string, job Job) Job {
 	return &FuncJob{
 		Job: func(ctx context.Context, s *State) error {
 			b := &bytes.Buffer{}
-			s2 := &State{Stdout: b}
+			s2 := &State{
+				Stdout: b,
+				Env:    append([]string(nil), s.Env...),
+			}
 			err := job.Run(ctx, s2)
 			if err != nil {
 				return err
