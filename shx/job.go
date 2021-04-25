@@ -26,6 +26,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -410,6 +411,7 @@ func SetEnvFromJob(name string, job Job) Job {
 				Stdout: b,
 				Env:    append([]string(nil), s.Env...),
 			}
+			log.Println("copied env")
 			err := job.Run(ctx, s2)
 			if err != nil {
 				return err
