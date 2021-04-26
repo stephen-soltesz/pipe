@@ -26,7 +26,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -411,7 +410,6 @@ func SetEnvFromJob(name string, job Job) Job {
 				Stdout: b,
 				Env:    append([]string(nil), s.Env...),
 			}
-			log.Println("copied env")
 			err := job.Run(ctx, s2)
 			if err != nil {
 				return err
@@ -425,6 +423,49 @@ func SetEnvFromJob(name string, job Job) Job {
 			job.Describe(d)
 			d.Line(")")
 			cp("")
+		},
+	}
+}
+
+// IfFileMissing creates a Job that runs the given job if the named file does
+// not exist.
+func IfFileMissing(file string, job Job) Job {
+	return &FuncJob{
+		Desc: func(d *Description) {
+			d.Line(fmt.Sprintf("if [[ ! -f %s ]] ; then", file))
+			d.Depth++
+			job.Describe(d)
+			d.Depth--
+			d.Line("fi")
+		},
+		Job: func(ctx context.Context, s *State) error {
+			_, err := os.Stat(s.Path(file))
+			if err != nil {
+				return job.Run(ctx, s)
+			}
+			// This is not an error, we simply don't run the job.
+			return nil
+		},
+	}
+}
+
+// IfVarEmpty creates a Job that runs the given job if the named variable is
+// empty.
+func IfVarEmpty(key string, job Job) Job {
+	return &FuncJob{
+		Desc: func(d *Description) {
+			d.Line(fmt.Sprintf("if [[ -z ${%s} ]] ; then", key))
+			d.Depth++
+			job.Describe(d)
+			d.Depth--
+			d.Line("fi")
+		},
+		Job: func(ctx context.Context, s *State) error {
+			if s.GetEnv(key) == "" {
+				return job.Run(ctx, s)
+			}
+			// This is not an error, we simply don't run the job.
+			return nil
 		},
 	}
 }
