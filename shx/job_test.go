@@ -20,6 +20,7 @@ func init() {
 	log.SetFlags(log.LUTC | log.Llongfile)
 }
 
+/*
 func TestDescription(t *testing.T) {
 	tests := []struct {
 		name  string
@@ -102,31 +103,6 @@ func TestExec(t *testing.T) {
 	}
 }
 
-func ExampleExec() {
-	ex := Exec("echo", "a", "b")
-	s := &State{
-		Stdout: os.Stdout,
-	}
-	ctx := context.Background()
-	err := ex.Run(ctx, s)
-	if err != nil {
-		panic(err)
-	}
-	// Output: a b
-}
-
-func ExampleSystem() {
-	sys := System("echo a b")
-	s := &State{
-		Stdout: os.Stdout,
-	}
-	ctx := context.Background()
-	err := sys.Run(ctx, s)
-	if err != nil {
-		panic(err)
-	}
-	// Output: a b
-}
 
 func TestFunc(t *testing.T) {
 	count := 0
@@ -157,26 +133,6 @@ func TestFunc(t *testing.T) {
 	}
 }
 
-func ExampleFunc() {
-	f := Func("example", func(ctx context.Context, s *State) error {
-		b, err := ioutil.ReadAll(s.Stdin)
-		if err != nil {
-			return err
-		}
-		_, err = s.Stdout.Write([]byte(base64.URLEncoding.EncodeToString(b)))
-		return err
-	})
-	s := &State{
-		Stdin:  bytes.NewBuffer([]byte(`{"key":"value"}\n`)),
-		Stdout: os.Stdout,
-	}
-	ctx := context.Background()
-	err := f.Run(ctx, s)
-	if err != nil {
-		panic(err)
-	}
-	// Output: eyJrZXkiOiJ2YWx1ZSJ9XG4=
-}
 
 func TestScript(t *testing.T) {
 	tmpdir := t.TempDir()
@@ -243,29 +199,70 @@ func TestScript(t *testing.T) {
 	}
 }
 
-func ExampleScript() {
-	sc := Script(
-		SetEnv("FOO", "BAR"),
-		Exec("env"),
-	)
-	s := &State{
-		Stdout: os.Stdout,
+func TestSetEnvFromJob_Run(t *testing.T) {
+	tests := []struct {
+		name    string
+		job     Job
+		want    string
+		wantErr bool
+	}{
+		{
+			name: "success",
+			job:  System("echo a"),
+			want: "success=a",
+		},
+		{
+			name:    "error",
+			job:     System("exit 1"),
+			wantErr: true,
+		},
 	}
-	ctx := context.Background()
-	err := sc.Run(ctx, s)
-	if err != nil {
-		panic(err)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			j := SetEnvFromJob(tt.name, tt.job)
+			s := &State{}
+			ctx := context.Background()
+			err := j.Run(ctx, s)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("SetEnvFromJob() error = got %v, want nil", err)
+			}
+			if len(s.Env) > 0 && s.Env[0] != tt.want {
+				t.Errorf("SetEnvFromJob() wrong Env; got %q, want %q", s.Env[0], tt.want)
+			}
+		})
 	}
-	d := &Description{}
-	sc.Describe(d)
-	fmt.Println(d.String())
-	// Output: FOO=BAR
-	//  1: (
-	//  2:   export FOO=BAR
-	//  3:   env
-	//  4: )
 }
 
+func TestSetEnvFromJob_Describe(t *testing.T) {
+	tests := []struct {
+		name string
+		job  Job
+		want string
+	}{
+		{
+			name: "success",
+			job:  System("echo a"),
+			want: " 1: export success=$(/bin/sh -c echo a)\n",
+		},
+		{
+			name: "error",
+			job:  System("exit 1"),
+			want: " 1: export error=$(/bin/sh -c exit 1)\n",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			j := SetEnvFromJob(tt.name, tt.job)
+			d := &Description{}
+			j.Describe(d)
+			s := d.String()
+			if s != tt.want {
+				t.Errorf("SetEnvFromJob() description; got %q, want %q", s, tt.want)
+			}
+		})
+	}
+}
+*/
 func TestPipe(t *testing.T) {
 	tmpdir := t.TempDir()
 
@@ -324,28 +321,6 @@ func TestPipe(t *testing.T) {
 			}
 		})
 	}
-}
-
-func ExamplePipe() {
-	p := Pipe(
-		Exec("ls"),
-		Exec("tail", "-1"),
-		Exec("wc", "-l"),
-	)
-	s := &State{
-		Stdout: os.Stdout,
-	}
-	ctx := context.Background()
-	err := p.Run(ctx, s)
-	if err != nil {
-		panic(err)
-	}
-	d := &Description{}
-	p.Describe(d)
-	fmt.Println(d.String())
-	// Output: 1
-	//  1: ls | tail -1 | wc -l
-
 }
 
 func TestReadWrite(t *testing.T) {
@@ -409,7 +384,6 @@ func TestReadWrite(t *testing.T) {
 		})
 	}
 }
-
 func TestState(t *testing.T) {
 	t.Run("SetState", func(t *testing.T) {
 		s := New()
@@ -444,6 +418,357 @@ func TestState(t *testing.T) {
 	})
 }
 
+func TestDescribe(t *testing.T) {
+	tests := []struct {
+		name string
+		job  Job
+		want string
+	}{
+		{
+			name: "exec-name-only",
+			job:  Exec("ls"),
+			want: " 1: ls\n",
+		},
+		{
+			name: "exec-name-with-args",
+			job:  Exec("ls", "-l"),
+			want: " 1: ls -l\n",
+		},
+		{
+			name: "func-simple",
+			job:  Func("simple", func(ctx context.Context, s *State) error { return nil }),
+			want: " 1: simple\n",
+		},
+		{
+			name: "func-custom",
+			job: &FuncJob{
+				Job: func(ctx context.Context, s *State) error { return nil },
+				Desc: func(d *Description) {
+					d.Line("custom")
+				},
+			},
+			want: " 1: custom\n",
+		},
+		{
+			name: "pipe",
+			job:  Pipe(Exec("echo", "ok"), Exec("cat")),
+			want: " 1: echo ok | cat\n",
+		},
+		{
+			name: "script",
+			job:  Script(Exec("echo", "ok")),
+			want: " 1: (\n 2:   echo ok\n 3: )\n",
+		},
+		{
+			name: "func-read",
+			job:  Read(nil),
+			want: " 1: read(<nil>)\n",
+		},
+		{
+			name: "func-readfile",
+			job:  ReadFile("input.file"),
+			want: " 1: cat < input.file\n",
+		},
+		{
+			name: "func-write",
+			job:  Write(nil),
+			want: " 1: write(<nil>)\n",
+		},
+		{
+			name: "func-writefile",
+			job:  WriteFile("output.file", 0666),
+			want: " 1: cat > output.file\n",
+		},
+		{
+			name: "func-chdir",
+			job:  Chdir("otherdir"),
+			want: " 1: cd otherdir\n",
+		},
+		{
+			name: "func-setenv",
+			job:  SetEnv("key", "value"),
+			want: " 1: export key=value\n",
+		},
+		{
+			name: "func-setenvfromjob",
+			job:  SetEnvFromJob("key", Exec("echo", "ok")),
+			want: " 1: export key=$(echo ok)\n",
+		},
+		{
+			name: "func-iffilemissing",
+			job:  IfFileMissing("file.missing", Exec("echo", "ok")),
+			want: " 1: if [[ ! -f file.missing ]] ; then\n 2:   echo ok\n 3: fi\n",
+		},
+		{
+			name: "func-ifvarempty",
+			job:  IfVarEmpty("key", Exec("echo", "ok")),
+			want: " 1: if [[ -z ${key} ]] ; then\n 2:   echo ok\n 3: fi\n",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			d := &Description{}
+			tt.job.Describe(d)
+			val := d.String()
+
+			if val != tt.want {
+				t.Errorf("Job.Describe() unexpected; got = %q, want %q", val, tt.want)
+			}
+		})
+	}
+}
+
+func TestRun(t *testing.T) {
+	tests := []struct {
+		name    string
+		job     Job
+		want    string
+		wantDir string
+		wantEnv string
+		wantErr bool
+	}{
+		{
+			name: "exec-echo",
+			job:  Exec("echo", "ok"),
+			want: "ok\n",
+		},
+		{
+			name:    "exec-error",
+			job:     Exec("/this-command-does-not-exist", "ok"),
+			wantErr: true,
+		},
+		{
+			name: "func-custom",
+			job: &FuncJob{
+				Job: func(ctx context.Context, s *State) error {
+					s.Stdout.Write([]byte("output"))
+					return nil
+				},
+				Desc: func(d *Description) {},
+			},
+			want: "output",
+		},
+		{
+			name: "pipe",
+			job:  Pipe(Exec("echo", "ok"), Exec("cat")),
+			want: "ok\n",
+		},
+		{
+			name: "script",
+			job:  Script(Exec("echo", "ok")),
+			want: "ok\n",
+		},
+		{
+			name:    "script-error",
+			job:     Script(System("exit 1")),
+			wantErr: true,
+		},
+		{
+			name:    "script-deep-error",
+			job:     Script(Script(System("exit 1"))),
+			wantErr: true,
+		},
+		{
+			name: "func-read",
+			job:  Read(bytes.NewBuffer([]byte("output"))),
+			want: "output",
+		},
+		{
+			name: "func-readfile",
+			job:  ReadFile("testdata/input.file"),
+			want: "input\n",
+		},
+		{
+			name:    "func-readfile-error",
+			job:     ReadFile("this-file-does-not-exist"),
+			wantErr: true,
+		},
+		/*{
+			name: "func-write",
+			job:  Write(nil),
+			want: " 1: write(<nil>)\n",
+		},
+		*/
+		{
+			name: "func-writefile",
+			job: Script(
+				Pipe(Exec("echo", "ok"), WriteFile("output.file", 0666)),
+				Exec("cat", "output.file"),
+			),
+			want: "ok\n",
+		},
+		{
+			name:    "func-chdir",
+			job:     Chdir("otherdir"),
+			wantDir: "otherdir",
+		},
+		{
+			name:    "func-setenv",
+			job:     SetEnv("key", "value"),
+			wantEnv: "value",
+		},
+		{
+			name: "func-setenv-overwrite",
+			job: Func("reset", func(ctx context.Context, s *State) error {
+				s.SetEnv("key", "original")
+				s.SetEnv("key", "final")
+				return nil
+			}),
+			wantEnv: "final",
+		},
+		{
+			name:    "func-setenvfromjob",
+			job:     SetEnvFromJob("key", Exec("echo", "value")),
+			wantEnv: "value",
+		},
+		{
+			name:    "func-setenvfromjob-error",
+			job:     SetEnvFromJob("key", System("exit 1")),
+			wantErr: true,
+		},
+		{
+			name: "func-iffilemissing",
+			job:  IfFileMissing("file.missing", Exec("echo", "ok")),
+			want: "ok\n",
+		},
+		{
+			name: "func-iffilemissing-not-missing",
+			job:  IfFileMissing("job_test.go", Exec("echo", "ok")),
+			want: "",
+		},
+		{
+			name: "func-ifvarempty",
+			job:  IfVarEmpty("key", Exec("echo", "ok")),
+			want: "ok\n",
+		},
+		{
+			name: "func-ifvarempty-not-empty",
+			job: Script(
+				SetEnv("key", "value"),
+				IfVarEmpty("key", Exec("echo", "ok")),
+			),
+			want: "",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			b := &bytes.Buffer{}
+			s := &State{
+				Stdout: b,
+			}
+			ctx := context.Background()
+			err := tt.job.Run(ctx, s)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("Job.Run() unexpected error; got = %v, wantErr %t", err, tt.wantErr)
+			}
+			if s.Dir != tt.wantDir {
+				t.Errorf("Job.Run() unexpected Dir; got = %q, want %q", s.Dir, tt.wantDir)
+			}
+			val := b.String()
+			if val != tt.want {
+				t.Errorf("Job.Run() unexpected output; got = %q, want %q", val, tt.want)
+			}
+			if s.GetEnv("key") != tt.wantEnv {
+				t.Errorf("Job.Run() unexpected output; got = %q, want %q", val, tt.wantEnv)
+			}
+		})
+	}
+}
+
+func ExampleExec() {
+	ex := Exec("echo", "a", "b")
+	s := &State{
+		Stdout: os.Stdout,
+	}
+	ctx := context.Background()
+	err := ex.Run(ctx, s)
+	if err != nil {
+		panic(err)
+	}
+	// Output: a b
+}
+
+func ExampleSystem() {
+	sys := System("echo a b")
+	s := &State{
+		Stdout: os.Stdout,
+	}
+	ctx := context.Background()
+	err := sys.Run(ctx, s)
+	if err != nil {
+		panic(err)
+	}
+	// Output: a b
+}
+
+func ExampleFunc() {
+	f := Func("example", func(ctx context.Context, s *State) error {
+		b, err := ioutil.ReadAll(s.Stdin)
+		if err != nil {
+			return err
+		}
+		_, err = s.Stdout.Write([]byte(base64.URLEncoding.EncodeToString(b)))
+		return err
+	})
+	s := &State{
+		Stdin:  bytes.NewBuffer([]byte(`{"key":"value"}\n`)),
+		Stdout: os.Stdout,
+	}
+	ctx := context.Background()
+	err := f.Run(ctx, s)
+	if err != nil {
+		panic(err)
+	}
+	// Output: eyJrZXkiOiJ2YWx1ZSJ9XG4=
+}
+
+func ExampleScript() {
+	sc := Script(
+		SetEnv("FOO", "BAR"),
+		Exec("env"),
+	)
+	s := &State{
+		Stdout: os.Stdout,
+	}
+	ctx := context.Background()
+	err := sc.Run(ctx, s)
+	if err != nil {
+		panic(err)
+	}
+	d := &Description{}
+	sc.Describe(d)
+	fmt.Println(d.String())
+	// Output: FOO=BAR
+	//  1: (
+	//  2:   export FOO=BAR
+	//  3:   env
+	//  4: )
+}
+
+func ExamplePipe() {
+	p := Pipe(
+		Exec("ls"),
+		Exec("tail", "-1"),
+		Exec("wc", "-l"),
+	)
+	s := &State{
+		Stdout: os.Stdout,
+	}
+	ctx := context.Background()
+	err := p.Run(ctx, s)
+	if err != nil {
+		panic(err)
+	}
+	d := &Description{}
+	p.Describe(d)
+	fmt.Println(d.String())
+	// Output: 1
+	//  1: ls | tail -1 | wc -l
+
+}
+
 func Example() {
 	sc := Script(
 		SetEnv("KEY", "ORIGINAL"),
@@ -465,68 +790,4 @@ func Example() {
 	// Output: KEY=SUBSCRIPT
 	// KEY=ORIGINAL
 	// KEY=shx
-}
-
-func TestSetEnvFromJob_Run(t *testing.T) {
-	tests := []struct {
-		name    string
-		job     Job
-		want    string
-		wantErr bool
-	}{
-		{
-			name: "success",
-			job:  System("echo a"),
-			want: "success=a",
-		},
-		{
-			name:    "error",
-			job:     System("exit 1"),
-			wantErr: true,
-		},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			j := SetEnvFromJob(tt.name, tt.job)
-			s := &State{}
-			ctx := context.Background()
-			err := j.Run(ctx, s)
-			if (err != nil) != tt.wantErr {
-				t.Errorf("SetEnvFromJob() error = got %v, want nil", err)
-			}
-			if len(s.Env) > 0 && s.Env[0] != tt.want {
-				t.Errorf("SetEnvFromJob() wrong Env; got %q, want %q", s.Env[0], tt.want)
-			}
-		})
-	}
-}
-
-func TestSetEnvFromJob_Describe(t *testing.T) {
-	tests := []struct {
-		name string
-		job  Job
-		want string
-	}{
-		{
-			name: "success",
-			job:  System("echo a"),
-			want: " 1: export success=$(/bin/sh -c echo a)\n",
-		},
-		{
-			name: "error",
-			job:  System("exit 1"),
-			want: " 1: export error=$(/bin/sh -c exit 1)\n",
-		},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			j := SetEnvFromJob(tt.name, tt.job)
-			d := &Description{}
-			j.Describe(d)
-			s := d.String()
-			if s != tt.want {
-				t.Errorf("SetEnvFromJob() description; got %q, want %q", s, tt.want)
-			}
-		})
-	}
 }
