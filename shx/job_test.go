@@ -20,7 +20,6 @@ func init() {
 	log.SetFlags(log.LUTC | log.Llongfile)
 }
 
-/*
 func TestDescription(t *testing.T) {
 	tests := []struct {
 		name  string
@@ -103,7 +102,6 @@ func TestExec(t *testing.T) {
 	}
 }
 
-
 func TestFunc(t *testing.T) {
 	count := 0
 	tests := []struct {
@@ -132,7 +130,6 @@ func TestFunc(t *testing.T) {
 		t.Errorf("Func() count incorrect; got %d, want 1", count)
 	}
 }
-
 
 func TestScript(t *testing.T) {
 	tmpdir := t.TempDir()
@@ -199,70 +196,6 @@ func TestScript(t *testing.T) {
 	}
 }
 
-func TestSetEnvFromJob_Run(t *testing.T) {
-	tests := []struct {
-		name    string
-		job     Job
-		want    string
-		wantErr bool
-	}{
-		{
-			name: "success",
-			job:  System("echo a"),
-			want: "success=a",
-		},
-		{
-			name:    "error",
-			job:     System("exit 1"),
-			wantErr: true,
-		},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			j := SetEnvFromJob(tt.name, tt.job)
-			s := &State{}
-			ctx := context.Background()
-			err := j.Run(ctx, s)
-			if (err != nil) != tt.wantErr {
-				t.Errorf("SetEnvFromJob() error = got %v, want nil", err)
-			}
-			if len(s.Env) > 0 && s.Env[0] != tt.want {
-				t.Errorf("SetEnvFromJob() wrong Env; got %q, want %q", s.Env[0], tt.want)
-			}
-		})
-	}
-}
-
-func TestSetEnvFromJob_Describe(t *testing.T) {
-	tests := []struct {
-		name string
-		job  Job
-		want string
-	}{
-		{
-			name: "success",
-			job:  System("echo a"),
-			want: " 1: export success=$(/bin/sh -c echo a)\n",
-		},
-		{
-			name: "error",
-			job:  System("exit 1"),
-			want: " 1: export error=$(/bin/sh -c exit 1)\n",
-		},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			j := SetEnvFromJob(tt.name, tt.job)
-			d := &Description{}
-			j.Describe(d)
-			s := d.String()
-			if s != tt.want {
-				t.Errorf("SetEnvFromJob() description; got %q, want %q", s, tt.want)
-			}
-		})
-	}
-}
-*/
 func TestPipe(t *testing.T) {
 	tmpdir := t.TempDir()
 
