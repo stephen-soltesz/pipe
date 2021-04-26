@@ -58,6 +58,12 @@ func main() {
 	)
 	sc4 := shx.Script(
 		shx.System("echo ok"),
+		shx.IfVarEmpty("MISSING_VAR",
+			shx.System("echo 'var was missing'"),
+		),
+		shx.IfFileMissing("foo.list",
+			shx.System("echo 'file was missing'"),
+		),
 		sc3,
 		shx.Func("func_to_uppercase",
 			func(ctx context.Context, s *shx.State) error {
