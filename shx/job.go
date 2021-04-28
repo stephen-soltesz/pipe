@@ -57,6 +57,7 @@ type Description struct {
 	idx   int
 	start string
 	sep   string
+	inner int
 }
 
 // Line adds a new command to the output buffer. If StartList was previously
@@ -69,7 +70,10 @@ func (d *Description) Line(cmd string) {
 			d.desc.WriteString(d.sep + cmd)
 			return
 		}
-		d.desc.WriteString(fmt.Sprintf("%2d: %s%s%s", d.line, prefix(d.Depth), d.start, cmd))
+		if d.inner == 1 {
+			d.desc.WriteString(fmt.Sprintf("%2d: %s", d.line, prefix(d.Depth)))
+		}
+		d.desc.WriteString(fmt.Sprintf("%s%s", d.start, cmd))
 		return
 	}
 	d.line++
@@ -83,17 +87,24 @@ func (d *Description) Line(cmd string) {
 // the line and resets the default behavior of Line until StartList is called
 // again.
 func (d *Description) StartList(start, sep string) (endlist func(end string)) {
-	d.line++
+	if d.inner == 0 {
+		d.line++
+	}
 	d.pipe = true
 	d.idx = 0
 	d.sep = sep
 	d.start = start
+	d.inner++
 	endlist = func(end string) {
 		d.pipe = false
 		// Verify that some commands were printed before adding extra newline.
-		if d.idx > 0 {
-			d.desc.WriteString(end + "\n")
+		if d.idx > 0 { // && d.inner > 0 {
+			d.desc.WriteString(end) // + "\n")
+			if d.inner == 1 {
+				d.desc.WriteString("\n")
+			}
 		}
+		d.inner--
 	}
 	return endlist
 }
@@ -418,11 +429,10 @@ func SetEnvFromJob(name string, job Job) Job {
 			return nil
 		},
 		Desc: func(d *Description) {
-			cp := d.StartList("", "")
+			close := d.StartList("", "")
 			d.Line(fmt.Sprintf("export %s=$(", name))
 			job.Describe(d)
-			d.Line(")")
-			cp("")
+			close(")")
 		},
 	}
 }
