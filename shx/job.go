@@ -401,6 +401,19 @@ func Chdir(dir string) Job {
 	}
 }
 
+func Println(message string) Job {
+	return &FuncJob{
+		Job: func(ctx context.Context, s *State) error {
+			message = os.Expand(message, s.GetEnv)
+			_, err := s.Stdout.Write([]byte(message + "\n"))
+			return err
+		},
+		Desc: func(d *Description) {
+			d.Line(fmt.Sprintf("echo %q", message))
+		},
+	}
+}
+
 // SetEnv creates a Job to assign the given name=value in the running State Env.
 // SetEnv is helpful in Script() Jobs.
 func SetEnv(name string, value string) Job {
