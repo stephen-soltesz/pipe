@@ -93,13 +93,18 @@ func (d *Description) StartList(start, sep string) (endlist func(end string)) {
 	d.pipe = true
 	d.idx = 0
 	d.sep = sep
-	d.start = start
+	if d.start != "" {
+		d.start = d.start + " " + start
+	} else {
+		d.start = start
+	}
 	d.inner++
 	endlist = func(end string) {
 		d.pipe = false
+		d.start = ""
 		// Verify that some commands were printed before adding extra newline.
-		if d.idx > 0 { // && d.inner > 0 {
-			d.desc.WriteString(end) // + "\n")
+		if d.idx > 0 {
+			d.desc.WriteString(end)
 			if d.inner == 1 {
 				d.desc.WriteString("\n")
 			}
