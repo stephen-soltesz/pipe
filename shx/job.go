@@ -50,77 +50,33 @@ type State struct {
 // the String() method.
 type Description struct {
 	// Depth is used to control line prefix indentation in complex Jobs.
-	Depth int
-	desc  bytes.Buffer
-	line  int
-	pipe  bool
-	idx   int
-	start string
-	sep   string
-	inner int
-}
-
-// push & append
-/*
-
-+
-+
-++
- +
- +
-+
-+++
-  +
-  +
-
-*/
-
-type sequence struct {
-	start string
-	sep   string
-	idx   int
-}
-
-type stack []*sequence
-
-func (s *stack) Idx(q *sequence) int {
-	idx := 0
-	for _, q := range *s {
-		idx += q.idx
-	}
-	return idx
-}
-func (s *stack) Start(q *sequence) string {
-	return ""
-}
-
-func (s *stack) Push(q *sequence) {
-	*s = append(*s, q)
-}
-
-func (s *stack) Pop() *sequence {
-	if len(*s) == 0 {
-		return nil
-	}
-	r := (*s)[len(*s)-1]
-	*s = (*s)[:len(*s)-1]
-	return r
+	Depth  int
+	desc   bytes.Buffer
+	line   int
+	inner  int
+	starts []string
+	seps   []string
+	idxs   []int
 }
 
 // Line adds a new command to the output buffer. If StartList was previously
 // called, then the command is appended as a continuation of a single line.
 // Otherwise, the command is formatted as a single line.
 func (d *Description) Line(cmd string) {
-	if d.pipe {
-		d.idx++
-		if d.idx > 1 {
-			d.desc.WriteString(d.sep + cmd)
+	if d.inner > 0 {
+		d.idxs[d.inner-1]++
+		if d.idxs[d.inner-1] > 1 {
+			d.desc.WriteString(d.seps[d.inner-1] + cmd)
+			return
+		}
+		if d.inner > 1 {
+			d.desc.WriteString(d.seps[d.inner-2] + cmd)
 			return
 		}
 		if d.inner == 1 {
 			d.desc.WriteString(fmt.Sprintf("%2d: %s", d.line, prefix(d.Depth)))
 		}
-		d.desc.WriteString(fmt.Sprintf("%s%s", d.start, cmd))
+		d.desc.WriteString(fmt.Sprintf("%s%s", d.starts[d.inner-1], cmd))
 		return
 	}
 	d.line++
@@ -137,25 +93,21 @@ func (d *Description) StartList(start, sep string) (endlist func(end string)) {
 	if d.inner == 0 {
 		d.line++
 	}
-	d.pipe = true
-	d.idx = 0
-	d.sep = sep
-	if d.start != "" {
-		d.start = d.start + " " + start
-	} else {
-		d.start = start
-	}
+	d.seps = append(d.seps, sep)
+	d.starts = append(d.starts, start)
+	d.idxs = append(d.idxs, 0)
 	d.inner++
 	endlist = func(end string) {
-		d.pipe = false
-		d.start = ""
 		// Verify that some commands were printed before adding extra newline.
-		if d.idx > 0 {
+		if d.idxs[d.inner-1] > 0 {
 			d.desc.WriteString(end)
 			if d.inner == 1 {
 				d.desc.WriteString("\n")
 			}
 		}
+		d.starts = d.starts[:len(d.starts)-1]
+		d.seps = d.seps[:len(d.seps)-1]
+		d.idxs = d.idxs[:len(d.idxs)-1]
 		d.inner--
 	}
 	return endlist

@@ -388,6 +388,16 @@ func TestDescribe(t *testing.T) {
 			want: " 1: echo ok | cat\n",
 		},
 		{
+			name: "setenv-pipe",
+			job:  SetEnvFromJob("key", Pipe(Exec("echo", "ok"), Exec("cat"))),
+			want: " 1: export key=$(echo ok | cat)\n",
+		},
+		{
+			name: "setenv-pipe-pipe",
+			job:  Pipe(Exec("cat", "foo.list"), Pipe(Exec("echo", "ok"), Exec("cat"))),
+			want: " 1: cat foo.list | echo ok | cat\n",
+		},
+		{
 			name: "script",
 			job:  Script(Exec("echo", "ok")),
 			want: " 1: (\n 2:   echo ok\n 3: )\n",
