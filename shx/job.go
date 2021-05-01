@@ -58,10 +58,11 @@ type Description struct {
 	idxs   []int
 }
 
-// Line adds a new command to the output buffer. If StartList was previously
-// called, then the command is appended as a continuation of a single line.
-// Otherwise, the command is formatted as a single line.
-func (d *Description) Line(cmd string) {
+// Append adds a new command to the output buffer. Typically, the command is
+// formatted as a new line at the end of the current buffer. If StartSequence
+// was called before calling Append, then the command is formatted as a
+// continuation of the current line.
+func (d *Description) Append(cmd string) {
 	l := len(d.idxs)
 	if l > 0 {
 		d.idxs[l-1]++
@@ -83,13 +84,13 @@ func (d *Description) Line(cmd string) {
 	d.desc.WriteString(fmt.Sprintf("%2d: %s%s\n", d.line, prefix(d.Depth), cmd))
 }
 
-// StartList begins formatting a multi-part expression on a single line.
-// StartList may help format a list, a pipeline, or similar expression.
+// StartSequence begins formatting a multi-part expression on a single line.
+// StartSequence may help format a list, a pipeline, or similar expression.
 // Subsequent calls to Line add commands to the end of the current line,
-// prefixed by "sep". StartList returns an endlist function that terminates
-// the line and resets the default behavior of Line until StartList is called
+// prefixed by "sep". StartSequence returns an endlist function that terminates
+// the line and resets the default behavior of Line until StartSequence is called
 // again.
-func (d *Description) StartList(start, sep string) (endlist func(end string)) {
+func (d *Description) StartSequence(start, sep string) (endlist func(end string)) {
 	l := len(d.idxs)
 	if l == 0 {
 		d.line++
@@ -266,7 +267,7 @@ func (f *ExecJob) Describe(d *Description) {
 	if len(f.args) > 0 {
 		args = " " + strings.Join(f.args, " ")
 	}
-	d.Line(f.name + args)
+	d.Append(f.name + args)
 }
 
 // Func creates a new FuncJob that runs the given function. Job functions should
@@ -276,7 +277,7 @@ func Func(name string, job func(ctx context.Context, s *State) error) *FuncJob {
 	return &FuncJob{
 		Job: job,
 		Desc: func(d *Description) {
-			d.Line(name)
+			d.Append(name)
 		},
 	}
 }
@@ -327,7 +328,7 @@ func Read(r io.Reader) Job {
 			return err
 		},
 		Desc: func(d *Description) {
-			d.Line(fmt.Sprintf("read(%v)", r))
+			d.Append(fmt.Sprintf("read(%v)", r))
 		},
 	}
 }
@@ -346,7 +347,7 @@ func ReadFile(path string) Job {
 			return err
 		},
 		Desc: func(d *Description) {
-			d.Line(fmt.Sprintf("cat < %s", path))
+			d.Append(fmt.Sprintf("cat < %s", path))
 		},
 	}
 }
@@ -360,7 +361,7 @@ func Write(w io.Writer) Job {
 			return err
 		},
 		Desc: func(d *Description) {
-			d.Line(fmt.Sprintf("write(%v)", w))
+			d.Append(fmt.Sprintf("write(%v)", w))
 		},
 	}
 }
@@ -380,7 +381,7 @@ func WriteFile(path string, perm os.FileMode) Job {
 			return err
 		},
 		Desc: func(d *Description) {
-			d.Line(fmt.Sprintf("cat > %s", path))
+			d.Append(fmt.Sprintf("cat > %s", path))
 		},
 	}
 }
@@ -395,7 +396,7 @@ func Chdir(dir string) Job {
 			return nil
 		},
 		Desc: func(d *Description) {
-			d.Line(fmt.Sprintf("cd %s", dir))
+			d.Append(fmt.Sprintf("cd %s", dir))
 		},
 	}
 }
@@ -408,7 +409,7 @@ func Println(message string) Job {
 			return err
 		},
 		Desc: func(d *Description) {
-			d.Line(fmt.Sprintf("echo %q", message))
+			d.Append(fmt.Sprintf("echo %q", message))
 		},
 	}
 }
@@ -422,7 +423,7 @@ func SetEnv(name string, value string) Job {
 			return nil
 		},
 		Desc: func(d *Description) {
-			d.Line(fmt.Sprintf("export %s=%s", name, value))
+			d.Append(fmt.Sprintf("export %s=%s", name, value))
 		},
 	}
 }
@@ -446,8 +447,8 @@ func SetEnvFromJob(name string, job Job) Job {
 			return nil
 		},
 		Desc: func(d *Description) {
-			close := d.StartList("", "")
-			d.Line(fmt.Sprintf("export %s=$(", name))
+			close := d.StartSequence("", "")
+			d.Append(fmt.Sprintf("export %s=$(", name))
 			job.Describe(d)
 			close(")")
 		},
@@ -459,11 +460,11 @@ func SetEnvFromJob(name string, job Job) Job {
 func IfFileMissing(file string, job Job) Job {
 	return &FuncJob{
 		Desc: func(d *Description) {
-			d.Line(fmt.Sprintf("if [[ ! -f %s ]] ; then", file))
+			d.Append(fmt.Sprintf("if [[ ! -f %s ]] ; then", file))
 			d.Depth++
 			job.Describe(d)
 			d.Depth--
-			d.Line("fi")
+			d.Append("fi")
 		},
 		Job: func(ctx context.Context, s *State) error {
 			_, err := os.Stat(s.Path(file))
@@ -481,11 +482,11 @@ func IfFileMissing(file string, job Job) Job {
 func IfVarEmpty(key string, job Job) Job {
 	return &FuncJob{
 		Desc: func(d *Description) {
-			d.Line(fmt.Sprintf("if [[ -z ${%s} ]] ; then", key))
+			d.Append(fmt.Sprintf("if [[ -z ${%s} ]] ; then", key))
 			d.Depth++
 			job.Describe(d)
 			d.Depth--
-			d.Line("fi")
+			d.Append("fi")
 		},
 		Job: func(ctx context.Context, s *State) error {
 			if s.GetEnv(key) == "" {
@@ -536,13 +537,13 @@ func (c *ScriptJob) Run(ctx context.Context, s *State) error {
 
 // Describe generates a description for all jobs in the script.
 func (c *ScriptJob) Describe(d *Description) {
-	d.Line("(")
+	d.Append("(")
 	d.Depth++
 	for i := range c.Jobs {
 		c.Jobs[i].Describe(d)
 	}
 	d.Depth--
-	d.Line(")")
+	d.Append(")")
 }
 
 // Pipe creates a Job that executes the given Jobs as a "shell pipeline",
@@ -624,7 +625,7 @@ func (c *PipeJob) Run(ctx context.Context, z *State) error {
 
 // Describe generates a description for all jobs in the pipeline.
 func (c *PipeJob) Describe(d *Description) {
-	endlist := d.StartList("", " | ")
+	endlist := d.StartSequence("", " | ")
 	defer endlist("")
 	for i := range c.Jobs {
 		c.Jobs[i].Describe(d)

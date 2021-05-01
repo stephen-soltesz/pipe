@@ -48,11 +48,11 @@ func TestDescription(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			d := &Description{}
 			for _, line := range tt.lines {
-				d.Line(line)
+				d.Append(line)
 			}
-			endlist := d.StartList("", " | ")
+			endlist := d.StartSequence("", " | ")
 			for _, cmd := range tt.cmds {
-				d.Line(cmd)
+				d.Append(cmd)
 			}
 			endlist("")
 			v := d.String()
@@ -377,7 +377,7 @@ func TestDescribe(t *testing.T) {
 			job: &FuncJob{
 				Job: func(ctx context.Context, s *State) error { return nil },
 				Desc: func(d *Description) {
-					d.Line("custom")
+					d.Append("custom")
 				},
 			},
 			want: " 1: custom\n",
