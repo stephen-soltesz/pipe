@@ -38,6 +38,10 @@ func main() {
 			shx.Exec("cat"),
 			shx.WriteFile("output.log", 0777),
 		),
+		shx.SetEnvFromJob("VARIABLE",
+			shx.System("echo $(( 10 * 13 ))"),
+		),
+		shx.Exec("env"),
 	)
 	sc2 := shx.Script(
 		shx.SetEnv("VARIABLE", "SECOND"),
@@ -47,8 +51,11 @@ func main() {
 			shx.Exec("tr", "a-z", "A-Z"),
 			shx.WriteFile("output2.log", 0777),
 		),
+		shx.IfFileMissing("file-is-missing. ^ _ []",
+			shx.Println("FILE IS MISSING!!")),
 		shx.Chdir(".."),
 		shx.Exec("pwd"),
+		shx.Println("About to fail.."),
 		shx.System("false"), // this will fail.
 	)
 
