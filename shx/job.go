@@ -60,6 +60,53 @@ type Description struct {
 	inner int
 }
 
+// push & append
+/*
+
++
++
+++
+ +
+ +
++
++++
+  +
+  +
+
+*/
+
+type sequence struct {
+	start string
+	sep   string
+	idx   int
+}
+
+type stack []*sequence
+
+func (s *stack) Idx(q *sequence) int {
+	idx := 0
+	for _, q := range *s {
+		idx += q.idx
+	}
+	return idx
+}
+func (s *stack) Start(q *sequence) string {
+	return ""
+}
+
+func (s *stack) Push(q *sequence) {
+	*s = append(*s, q)
+}
+
+func (s *stack) Pop() *sequence {
+	if len(*s) == 0 {
+		return nil
+	}
+	r := (*s)[len(*s)-1]
+	*s = (*s)[:len(*s)-1]
+	return r
+}
+
 // Line adds a new command to the output buffer. If StartList was previously
 // called, then the command is appended as a continuation of a single line.
 // Otherwise, the command is formatted as a single line.
