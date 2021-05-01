@@ -42,6 +42,22 @@ func main() {
 			shx.System("echo $(( 10 * 13 ))"),
 		),
 		shx.Exec("env"),
+		shx.Pipe(
+			shx.Exec("cat", "output.log"),
+			shx.Pipe(
+				shx.Exec("echo", "ok"),
+				shx.Exec("cat"),
+			),
+		),
+		shx.SetEnvFromJob("VARIABLE",
+			shx.Pipe(
+				shx.Exec("cat", "output.log"),
+				shx.Pipe(
+					shx.Exec("echo", "ok"),
+					shx.Exec("cat"),
+				),
+			),
+		),
 	)
 	sc2 := shx.Script(
 		shx.SetEnv("VARIABLE", "SECOND"),
