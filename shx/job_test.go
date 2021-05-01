@@ -447,6 +447,11 @@ func TestDescribe(t *testing.T) {
 			job:  IfVarEmpty("key", Exec("echo", "ok")),
 			want: " 1: if [[ -z ${key} ]] ; then\n 2:   echo ok\n 3: fi\n",
 		},
+		{
+			name: "func-println",
+			job:  Println("test"),
+			want: " 1: echo \"test\"\n",
+		},
 	}
 
 	for _, tt := range tests {
@@ -592,6 +597,16 @@ func TestRun(t *testing.T) {
 				IfVarEmpty("key", Exec("echo", "ok")),
 			),
 			want: "",
+		},
+		{
+			name: "func-println",
+			job:  Println("test"),
+			want: "test\n",
+		},
+		{
+			name: "func-println-expand",
+			job:  Script(SetEnv("KEY", "VALUE"), Println("test ${KEY}")),
+			want: "test VALUE\n",
 		},
 	}
 
