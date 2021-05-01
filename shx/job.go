@@ -53,7 +53,6 @@ type Description struct {
 	Depth  int
 	desc   bytes.Buffer
 	line   int
-	inner  int
 	starts []string
 	seps   []string
 	idxs   []int
@@ -63,20 +62,21 @@ type Description struct {
 // called, then the command is appended as a continuation of a single line.
 // Otherwise, the command is formatted as a single line.
 func (d *Description) Line(cmd string) {
-	if d.inner > 0 {
-		d.idxs[d.inner-1]++
-		if d.idxs[d.inner-1] > 1 {
-			d.desc.WriteString(d.seps[d.inner-1] + cmd)
+	l := len(d.idxs)
+	if l > 0 {
+		d.idxs[l-1]++
+		if d.idxs[l-1] > 1 {
+			d.desc.WriteString(d.seps[l-1] + cmd)
 			return
 		}
-		if d.inner > 1 {
-			d.desc.WriteString(d.seps[d.inner-2] + cmd)
+		if l > 1 {
+			d.desc.WriteString(d.seps[l-2] + cmd)
 			return
 		}
-		if d.inner == 1 {
+		if l == 1 {
 			d.desc.WriteString(fmt.Sprintf("%2d: %s", d.line, prefix(d.Depth)))
 		}
-		d.desc.WriteString(fmt.Sprintf("%s%s", d.starts[d.inner-1], cmd))
+		d.desc.WriteString(fmt.Sprintf("%s%s", d.starts[l-1], cmd))
 		return
 	}
 	d.line++
@@ -90,25 +90,25 @@ func (d *Description) Line(cmd string) {
 // the line and resets the default behavior of Line until StartList is called
 // again.
 func (d *Description) StartList(start, sep string) (endlist func(end string)) {
-	if d.inner == 0 {
+	l := len(d.idxs)
+	if l == 0 {
 		d.line++
 	}
 	d.seps = append(d.seps, sep)
 	d.starts = append(d.starts, start)
 	d.idxs = append(d.idxs, 0)
-	d.inner++
 	endlist = func(end string) {
+		l := len(d.idxs)
 		// Verify that some commands were printed before adding extra newline.
-		if d.idxs[d.inner-1] > 0 {
+		if d.idxs[l-1] > 0 {
 			d.desc.WriteString(end)
-			if d.inner == 1 {
+			if l == 1 {
 				d.desc.WriteString("\n")
 			}
 		}
 		d.starts = d.starts[:len(d.starts)-1]
 		d.seps = d.seps[:len(d.seps)-1]
 		d.idxs = d.idxs[:len(d.idxs)-1]
-		d.inner--
 	}
 	return endlist
 }
