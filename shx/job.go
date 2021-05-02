@@ -396,6 +396,9 @@ func Chdir(dir string) Job {
 	}
 }
 
+// Println writes the given message to the State Stdout. Println expands
+// variable references from the running State environment. Println supports the
+// same variable syntax as os.Expand, e.g. $NAME or ${NAME}.
 func Println(message string) Job {
 	return &FuncJob{
 		Job: func(ctx context.Context, s *State) error {
@@ -418,7 +421,7 @@ func SetEnv(name string, value string) Job {
 			return nil
 		},
 		Desc: func(d *Description) {
-			d.Append(fmt.Sprintf("export %s=%s", name, value))
+			d.Append(fmt.Sprintf("export %s=%q", name, value))
 		},
 	}
 }
