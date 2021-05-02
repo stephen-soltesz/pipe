@@ -33,17 +33,6 @@ import (
 	"sync"
 )
 
-// State is a Job configuration. Callers provide the first initial State, and
-// as a Job executes it creates new State instances derived from the original,
-// e.g. for Pipes and subcommands.
-type State struct {
-	Stdin  io.Reader
-	Stdout io.Writer
-	Stderr io.Writer
-	Dir    string
-	Env    []string
-}
-
 // Description is used to produce a representation of a Job. Custom Job types
 // should use the Description interface to represent their behavior in a
 // helpful, human-readable form. After collecting a description, serialize using
@@ -114,6 +103,17 @@ func (d *Description) String() string {
 	s := d.desc.String()
 	d.desc.Reset()
 	return s
+}
+
+// State is a Job configuration. Callers provide the first initial State, and
+// as a Job executes it creates new State instances derived from the original,
+// e.g. for Pipes and subcommands.
+type State struct {
+	Stdin  io.Reader
+	Stdout io.Writer
+	Stderr io.Writer
+	Dir    string
+	Env    []string
 }
 
 // New creates a State instance based on the current process state, using
