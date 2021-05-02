@@ -53,6 +53,7 @@ type Description struct {
 	Depth  int
 	desc   bytes.Buffer
 	line   int
+	prefix string
 	starts []string
 	seps   []string
 	idxs   []int
@@ -73,15 +74,11 @@ func (d *Description) Append(cmd string) {
 		}
 		if l > 1 {
 			// For deeper nesting, use the prior separator on the first cmd.
-			// TODO: include starts.
+			// TODO: this is wrong.
 			d.desc.WriteString(d.seps[l-2] + cmd)
 			return
 		}
-		if l == 1 {
-			// For the first cmd for the first line.
-			d.desc.WriteString(fmt.Sprintf("%2d: %s", d.line, prefix(d.Depth)))
-		}
-		d.desc.WriteString(fmt.Sprintf("%s%s", d.starts[l-1], cmd))
+		d.desc.WriteString(cmd)
 		return
 	}
 	d.line++
@@ -95,21 +92,21 @@ func (d *Description) Append(cmd string) {
 // the line and resets the default behavior of Line until StartSequence is called
 // again.
 func (d *Description) StartSequence(start, sep string) (endlist func(end string)) {
-	l := len(d.idxs)
-	if l == 0 {
-		d.line++
-	}
 	d.seps = append(d.seps, sep)
 	d.starts = append(d.starts, start)
 	d.idxs = append(d.idxs, 0)
+	l := len(d.idxs)
+	if l == 1 {
+		d.line++
+		d.desc.WriteString(fmt.Sprintf("%2d: %s", d.line, prefix(d.Depth)))
+	}
+	d.desc.WriteString(start)
 	endlist = func(end string) {
 		l := len(d.idxs)
 		// Verify that some commands were printed before adding extra newline.
-		if d.idxs[l-1] > 0 {
-			d.desc.WriteString(end)
-			if l == 1 {
-				d.desc.WriteString("\n")
-			}
+		d.desc.WriteString(end)
+		if l == 1 {
+			d.desc.WriteString("\n")
 		}
 		d.starts = d.starts[:len(d.starts)-1]
 		d.seps = d.seps[:len(d.seps)-1]
@@ -451,8 +448,7 @@ func SetEnvFromJob(name string, job Job) Job {
 			return nil
 		},
 		Desc: func(d *Description) {
-			close := d.StartSequence("", "")
-			d.Append(fmt.Sprintf("export %s=$(", name))
+			close := d.StartSequence(fmt.Sprintf("export %s=$(", name), "")
 			job.Describe(d)
 			close(")")
 		},

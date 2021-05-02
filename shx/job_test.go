@@ -30,7 +30,7 @@ func TestDescription(t *testing.T) {
 		{
 			name:  "success-script",
 			lines: []string{"env", "pwd"},
-			want:  " 1: env\n 2: pwd\n",
+			want:  " 1: env\n 2: pwd\n 3: \n",
 		},
 		{
 			name: "success-pipe",
