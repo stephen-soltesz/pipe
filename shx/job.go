@@ -77,12 +77,11 @@ func (d *Description) Append(cmd string) {
 	d.desc.WriteString(fmt.Sprintf("%2d: %s%s\n", d.line, prefix(d.Depth), cmd))
 }
 
-// StartSequence begins formatting a multi-part expression on a single line.
-// StartSequence may help format a list, a pipeline, or similar expression.
-// Subsequent calls to Line add commands to the end of the current line,
-// prefixed by "sep". StartSequence returns an endlist function that terminates
-// the line and resets the default behavior of Line until StartSequence is called
-// again.
+// StartSequence begins formatting a multi-part expression on a single line,
+// such as a list, pipeline, or similar expression. StartSequence begins with
+// "start" and subsequent calls to Append add commands to the end of the current
+// line, separating sequential commands with "sep". StartSequence returns a
+// function that ends the line and restores the default behavior of Append.
 func (d *Description) StartSequence(start, sep string) (endlist func(end string)) {
 	d.seps = append(d.seps, sep)
 	d.idxs = append(d.idxs, 0)
