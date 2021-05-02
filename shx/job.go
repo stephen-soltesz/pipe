@@ -67,14 +67,18 @@ func (d *Description) Append(cmd string) {
 	if l > 0 {
 		d.idxs[l-1]++
 		if d.idxs[l-1] > 1 {
+			// After the first cmd, separate others with a separator.
 			d.desc.WriteString(d.seps[l-1] + cmd)
 			return
 		}
 		if l > 1 {
+			// For deeper nesting, use the prior separator on the first cmd.
+			// TODO: include starts.
 			d.desc.WriteString(d.seps[l-2] + cmd)
 			return
 		}
 		if l == 1 {
+			// For the first cmd for the first line.
 			d.desc.WriteString(fmt.Sprintf("%2d: %s", d.line, prefix(d.Depth)))
 		}
 		d.desc.WriteString(fmt.Sprintf("%s%s", d.starts[l-1], cmd))
