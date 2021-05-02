@@ -54,7 +54,6 @@ type Description struct {
 	desc   bytes.Buffer
 	line   int
 	prefix string
-	starts []string
 	seps   []string
 	idxs   []int
 }
@@ -87,7 +86,6 @@ func (d *Description) Append(cmd string) {
 // again.
 func (d *Description) StartSequence(start, sep string) (endlist func(end string)) {
 	d.seps = append(d.seps, sep)
-	d.starts = append(d.starts, start)
 	d.idxs = append(d.idxs, 0)
 	l := len(d.idxs)
 	if l == 1 {
@@ -106,7 +104,6 @@ func (d *Description) StartSequence(start, sep string) (endlist func(end string)
 		if l == 1 {
 			d.desc.WriteString("\n")
 		}
-		d.starts = d.starts[:len(d.starts)-1]
 		d.seps = d.seps[:len(d.seps)-1]
 		d.idxs = d.idxs[:len(d.idxs)-1]
 	}
