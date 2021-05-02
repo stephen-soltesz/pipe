@@ -50,12 +50,11 @@ type State struct {
 // the String() method.
 type Description struct {
 	// Depth is used to control line prefix indentation in complex Jobs.
-	Depth  int
-	desc   bytes.Buffer
-	line   int
-	prefix string
-	seps   []string
-	idxs   []int
+	Depth int
+	desc  bytes.Buffer
+	line  int
+	seps  []string
+	idxs  []int
 }
 
 // Append adds a new command to the output buffer. Typically, the command is
