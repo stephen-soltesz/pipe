@@ -72,12 +72,6 @@ func (d *Description) Append(cmd string) {
 			d.desc.WriteString(d.seps[l-1] + cmd)
 			return
 		}
-		if l > 1 {
-			// For deeper nesting, use the prior separator on the first cmd.
-			// TODO: this is wrong.
-			d.desc.WriteString(d.seps[l-2] + cmd)
-			return
-		}
 		d.desc.WriteString(cmd)
 		return
 	}
@@ -99,6 +93,10 @@ func (d *Description) StartSequence(start, sep string) (endlist func(end string)
 	if l == 1 {
 		d.line++
 		d.desc.WriteString(fmt.Sprintf("%2d: %s", d.line, prefix(d.Depth)))
+	}
+	if l > 1 {
+		// For deeper nesting, use the prior separator prior to current start.
+		d.desc.WriteString(d.seps[l-2])
 	}
 	d.desc.WriteString(start)
 	endlist = func(end string) {
