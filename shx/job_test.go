@@ -430,7 +430,7 @@ func TestDescribe(t *testing.T) {
 		{
 			name: "func-setenv",
 			job:  SetEnv("key", "value"),
-			want: " 1: export key=value\n",
+			want: ` 1: export key="value"` + "\n",
 		},
 		{
 			name: "func-setenvfromjob",
@@ -450,7 +450,7 @@ func TestDescribe(t *testing.T) {
 		{
 			name: "func-println",
 			job:  Println("test"),
-			want: " 1: echo \"test\"\n",
+			want: ` 1: echo "test"` + "\n",
 		},
 	}
 
@@ -707,7 +707,7 @@ func ExampleScriptJob_Describe() {
 	sc.Describe(d)
 	fmt.Println(d.String())
 	// Output: 1: (
-	//  2:   export FOO=BAR
+	//  2:   export FOO="BAR"
 	//  3:   env
 	//  4: )
 }
