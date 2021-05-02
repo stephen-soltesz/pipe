@@ -635,7 +635,7 @@ func TestRun(t *testing.T) {
 	}
 }
 
-func ExampleExec() {
+func ExampleExecJob_Run() {
 	ex := Exec("echo", "a", "b")
 	s := &State{
 		Stdout: os.Stdout,
@@ -661,7 +661,7 @@ func ExampleSystem() {
 	// Output: a b
 }
 
-func ExampleFunc() {
+func ExampleFuncJob_Run() {
 	f := Func("example", func(ctx context.Context, s *State) error {
 		b, err := ioutil.ReadAll(s.Stdin)
 		if err != nil {
@@ -682,7 +682,7 @@ func ExampleFunc() {
 	// Output: eyJrZXkiOiJ2YWx1ZSJ9XG4=
 }
 
-func ExampleScript() {
+func ExampleScriptJob_Run() {
 	sc := Script(
 		SetEnv("FOO", "BAR"),
 		Exec("env"),
@@ -695,55 +695,69 @@ func ExampleScript() {
 	if err != nil {
 		panic(err)
 	}
+	// Output: FOO=BAR
+}
+
+func ExampleScriptJob_Describe() {
+	sc := Script(
+		SetEnv("FOO", "BAR"),
+		Exec("env"),
+	)
 	d := &Description{}
 	sc.Describe(d)
 	fmt.Println(d.String())
-	// Output: FOO=BAR
-	//  1: (
+	// Output: 1: (
 	//  2:   export FOO=BAR
 	//  3:   env
 	//  4: )
 }
 
-func ExamplePipe() {
+func ExamplePipeJob_Run() {
 	p := Pipe(
 		Exec("ls"),
 		Exec("tail", "-1"),
 		Exec("wc", "-l"),
 	)
-	s := &State{
-		Stdout: os.Stdout,
-	}
-	ctx := context.Background()
-	err := p.Run(ctx, s)
+	s := New()
+	err := p.Run(context.Background(), s)
 	if err != nil {
 		panic(err)
 	}
+	// Output: 1
+}
+
+func ExamplePipeJob_Describe() {
+	p := Pipe(
+		Exec("ls"),
+		Exec("tail", "-1"),
+		Exec("wc", "-l"),
+	)
 	d := &Description{}
 	p.Describe(d)
 	fmt.Println(d.String())
-	// Output: 1
-	//  1: ls | tail -1 | wc -l
-
+	// Output:  1: ls | tail -1 | wc -l
 }
 
 func Example() {
 	sc := Script(
+		// Set environment in Script State.
 		SetEnv("KEY", "ORIGINAL"),
 		Script(
+			// Overwrite environment in sub-Script.
 			SetEnv("KEY", "SUBSCRIPT"),
 			Exec("env"),
 		),
+		// Original Script State environment was not modified by sub-Script.
 		Exec("env"),
+		// Overwrite environment using command output.
 		SetEnvFromJob("KEY", System("basename $( pwd )")),
 		Exec("env"),
 	)
 	s := New()
-	s.Env = nil // Clear state environment.
+	s.Env = nil // Clear state environment for example.
 	err := sc.Run(context.Background(), s)
 	if err != nil {
-		fmt.Println("err:", err)
-		return
+		panic(err)
 	}
 	// Output: KEY=SUBSCRIPT
 	// KEY=ORIGINAL
