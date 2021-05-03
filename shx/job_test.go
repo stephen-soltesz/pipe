@@ -640,8 +640,7 @@ func ExampleExecJob_Run() {
 	s := &State{
 		Stdout: os.Stdout,
 	}
-	ctx := context.Background()
-	err := ex.Run(ctx, s)
+	err := ex.Run(context.Background(), s)
 	if err != nil {
 		panic(err)
 	}
@@ -653,8 +652,7 @@ func ExampleSystem() {
 	s := &State{
 		Stdout: os.Stdout,
 	}
-	ctx := context.Background()
-	err := sys.Run(ctx, s)
+	err := sys.Run(context.Background(), s)
 	if err != nil {
 		panic(err)
 	}
@@ -674,8 +672,7 @@ func ExampleFuncJob_Run() {
 		Stdin:  bytes.NewBuffer([]byte(`{"key":"value"}\n`)),
 		Stdout: os.Stdout,
 	}
-	ctx := context.Background()
-	err := f.Run(ctx, s)
+	err := f.Run(context.Background(), s)
 	if err != nil {
 		panic(err)
 	}
@@ -690,8 +687,7 @@ func ExampleScriptJob_Run() {
 	s := &State{
 		Stdout: os.Stdout,
 	}
-	ctx := context.Background()
-	err := sc.Run(ctx, s)
+	err := sc.Run(context.Background(), s)
 	if err != nil {
 		panic(err)
 	}
