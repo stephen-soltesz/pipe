@@ -203,6 +203,19 @@ func (s *State) GetEnv(name string) string {
 	return ""
 }
 
+// Run executes the given job using a default State returned by New.
+func Run(ctx context.Context, j Job) error {
+	s := New()
+	return j.Run(ctx, s)
+}
+
+// Describe generates a string description of the given Job.
+func Describe(j Job) string {
+	d := &Description{}
+	j.Describe(d)
+	return d.String()
+}
+
 // Job is the interface for an operation. A Job controls how an operation is run
 // and represented.
 type Job interface {
