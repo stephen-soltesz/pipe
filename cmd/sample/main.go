@@ -5,7 +5,6 @@ import (
 	"flag"
 	"fmt"
 	"io/ioutil"
-	"os"
 	"strings"
 
 	"github.com/m-lab/go/rtx"
@@ -23,12 +22,6 @@ func init() {
 func main() {
 	flag.Parse()
 
-	wd, err := os.Getwd()
-	rtx.Must(err, "failed to get working directory")
-
-	s := shx.New()
-	s.Env = []string{}
-	s.SetDir(wd)
 	sc1 := shx.Script(
 		shx.SetEnv("VARIABLE", "FIRST"),
 		shx.Exec("pwd"),
@@ -100,15 +93,20 @@ func main() {
 		// shx.System("false"),
 	)
 	if dryrun {
-		d := &shx.Description{}
-		sc4.Describe(d)
-		fmt.Print(d.String())
+		fmt.Print(shx.Describe(sc4))
 		return
 	}
 
 	ctx := context.Background()
-	err = sc4.Run(ctx, s)
-	if err != nil {
-		fmt.Println(err)
-	}
+	/*	wd, err := os.Getwd()
+		rtx.Must(err, "failed to get working directory")
+		s := shx.New()
+		s.Env = []string{}
+		s.SetDir(wd)
+		err = sc4.Run(ctx, s)
+		if err != nil {
+			fmt.Println(err)
+		}
+	*/
+	rtx.Must(shx.Run(ctx, sc4), "failed to run job")
 }
