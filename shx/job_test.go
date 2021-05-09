@@ -701,8 +701,9 @@ func ExampleScriptJob_Describe() {
 	)
 	d := &Description{}
 	sc.Describe(d)
-	fmt.Println(d.String())
-	// Output: 1: (
+	fmt.Println("\n" + d.String())
+	// Output:
+	//  1: (
 	//  2:   export FOO="BAR"
 	//  3:   env
 	//  4: )
@@ -758,4 +759,29 @@ func Example() {
 	// Output: KEY=SUBSCRIPT
 	// KEY=ORIGINAL
 	// KEY=shx
+}
+
+func ExampleRun() {
+	sc := Script(
+		SetEnv("KEY", "VALUE"),
+		Println("print test: ${KEY}"),
+	)
+	err := Run(context.Background(), sc)
+	if err != nil {
+		panic(err)
+	}
+	// Output: print test: VALUE
+}
+
+func ExampleDescribe() {
+	sc := Script(
+		SetEnv("KEY", "VALUE"),
+		Println("print test: ${KEY}"),
+	)
+	fmt.Println("\n" + Describe(sc))
+	// Output:
+	//  1: (
+	//  2:   export KEY="VALUE"
+	//  3:   echo "print test: ${KEY}"
+	//  4: )
 }
